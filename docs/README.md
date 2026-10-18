@@ -18,3 +18,5 @@ OpenCode и GitHub ищут их именно там. Описания отде�
 с кодом: `kit/dashboard/README.ru.md`, `kit/configurator/UX.ru.md`, `kit/prompts/README.ru.md`.
 
 - [Разбор тупика и восстановление неудачной попытки](kit/EXECUTION_RECOVERY.ru.md).
+
+- [Настоящий браузер и чтение отчёта после finish](kit/BROWSER_AND_REPORT.ru.md).
