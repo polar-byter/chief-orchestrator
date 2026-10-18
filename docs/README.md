@@ -16,3 +16,5 @@
 В корне проекта остаются только `README.md`, `README.en.md` и `AGENTS.md`:
 OpenCode и GitHub ищут их именно там. Описания отдельных частей кода лежат рядом
 с кодом: `kit/dashboard/README.ru.md`, `kit/configurator/UX.ru.md`, `kit/prompts/README.ru.md`.
+
+- [Разбор тупика и восстановление неудачной попытки](kit/EXECUTION_RECOVERY.ru.md).
