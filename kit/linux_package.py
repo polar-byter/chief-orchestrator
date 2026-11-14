@@ -65,7 +65,7 @@ def build(source, destination, version='0.2.0'):
         'Section: devel\nPriority: optional\n'
         f'Depends: {DEPENDENCIES}\n'
         f'Installed-Size: {(sum(len(data) for data, mode in files.values()) + 1023) // 1024}\n'
-        'Homepage: https://github.com/polar-byter/opencode-environmental-tune\n'
+        'Homepage: https://github.com/polar-byter/chief-orchestrator\n'
         'Description: Graphical project setup for the OpenCode orchestration kit\n'
         ' Create a project folder, configure AI models and open OpenCode Desktop.\n')
     checksums = ''.join(hashlib.md5(data).hexdigest() + '  ' + name + '\n' for name, (data, mode) in sorted(files.items()))

@@ -116,8 +116,8 @@
 
 ![Мастер установки](../../readme_gif/01_install_live.gif)
 
-1. На [странице репозитория](https://github.com/polar-byter/opencode-environmental-tune)
-   нажми **Code → Download ZIP** и полностью распакуй архив в отдельную папку.
+1. На [странице выпуска](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0)
+   скачай `chief-1.0.0.zip` и полностью распакуй архив в отдельную папку.
 2. Дважды щёлкни **install.cmd**. Откроется мастер «Создание проекта».
 3. **Шаг 1** — мастер сам находит OpenCode Desktop. Если не нашёл, нажми
    «Скачать OpenCode», установи и затем «Проверить ещё раз».

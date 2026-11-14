@@ -1,5 +1,7 @@
 # Chief for OpenCode, Pi, Codex and Claude Code
 
+[Repository](https://github.com/polar-byter/chief-orchestrator) · [Release v1.0.0](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0) · [Download ZIP](https://github.com/polar-byter/chief-orchestrator/releases/download/v1.0.0/chief-1.0.0.zip) · [SHA-256](https://github.com/polar-byter/chief-orchestrator/releases/download/v1.0.0/SHA256SUMS.txt)
+
 Run `install.cmd` on Windows or `sh install.sh` on Linux. Select the agent
 and a project folder. Only OpenCode requires Desktop. For Pi the wizard checks
 for a compatible SDK and can install Pi 1.3.0 in the project with Node.js and npm. New projects

@@ -116,8 +116,8 @@ Here is how it looks in the wizard itself:
 
 ![The setup wizard](../../readme_gif/en/01_install_live.gif)
 
-1. On the [repository page](https://github.com/polar-byter/opencode-environmental-tune)
-   click **Code → Download ZIP** and fully extract the archive into a separate folder.
+1. On the [release page](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0)
+   download `chief-1.0.0.zip` and fully extract the archive into a separate folder.
 2. Double-click **install.cmd**. The "Project setup" wizard opens.
 3. **Step 1** — the wizard finds OpenCode Desktop itself. If not, click
    "Download OpenCode", install it and then "Check again".

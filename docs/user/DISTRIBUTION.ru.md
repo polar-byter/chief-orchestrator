@@ -1,5 +1,8 @@
 # Установка, миграция и выпуск Чифа
 
+Общий [выпуск v1.0.0](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0)
+содержит `chief-1.0.0.zip` и `SHA256SUMS.txt`. Сверьте SHA-256 ZIP перед распаковкой.
+
 ## Установка в проект
 
 В распакованном комплекте откройте `install.cmd` (Windows) или выполните
@@ -65,7 +68,7 @@ Pi и остановите службу проекта. Первичный ма�
    GitHub также предлагает ZIP и tar.gz исходников из тега. В публичном
    репозитории они доступны всем. [Документация GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
-Поставку Чифа собирают в основном репозитории `polar-byter/opencode-environmental-tune`.
+Поставку Чифа собирают в основном репозитории `polar-byter/chief-orchestrator`.
 Прежний отдельный репозиторий `polar-byter/pi-agent-kit` удалён 15 ноября 2026 года.
 Для обновления старого проекта Pi используйте общий комплект и порядок обновления выше.
 Для конкретной публикации владелец задаёт версию, целевое

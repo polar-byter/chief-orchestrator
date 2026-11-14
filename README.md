@@ -1,5 +1,7 @@
 # Чиф для OpenCode, Pi, Codex и Claude Code
 
+[Репозиторий chief-orchestrator](https://github.com/polar-byter/chief-orchestrator) · [Выпуск v1.0.0](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0) · [Скачать ZIP](https://github.com/polar-byter/chief-orchestrator/releases/download/v1.0.0/chief-1.0.0.zip) · [SHA-256](https://github.com/polar-byter/chief-orchestrator/releases/download/v1.0.0/SHA256SUMS.txt)
+
 **Установка.** Распакуйте комплект, запустите `install.cmd` в Windows или
 `sh install.sh` в Linux, выберите среду и папку проекта. Для OpenCode мастер
 ищет Desktop, для Codex и Claude Code проверяет выбранный CLI. Для Pi мастер

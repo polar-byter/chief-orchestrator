@@ -21,7 +21,7 @@ below the task selector. Leave it off to use your usual agent settings.
 
 1. Install **OpenCode Desktop for Windows** from the [official download page](https://opencode.ai/download). Use Desktop 2.x. Installing only the terminal CLI does not install Desktop.
 2. No manual Python installation is needed. On first launch the kit downloads and verifies pinned **Python 3.13.16**, including Tk, from python.org. Internet access is required; other Python installations are preserved.
-3. On the [kit repository page](https://github.com/polar-byter/opencode-environmental-tune), choose **Code → Download ZIP**, then extract the entire archive. Do not run the installer inside the ZIP.
+3. On the [release page](https://github.com/polar-byter/chief-orchestrator/releases/tag/v1.0.0), download `chief-1.0.0.zip`, then extract the entire archive. Do not run the installer inside the ZIP.
 4. Double-click **install.cmd** in the extracted folder. Wait for Python preparation, then the graphical wizard opens. Subsequent launches reuse the private runtime.
 5. The wizard finds Desktop. Otherwise click **Download OpenCode**, install it, then **Check again**. For a custom installation, choose its `OpenCode.exe` using **Choose application…**.
 6. Enter a separate project folder, for example `D:\Projects\my-home-app`. Missing folders are created automatically. Keep it outside the downloaded kit. Existing application code is preserved; conflicting kit/configuration files are rejected with an explanation.
