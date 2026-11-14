@@ -30,7 +30,7 @@ class DesktopConfigurator:
         self.advanced = {role: tk.BooleanVar() for role in workflow.ROLES}
         self.revealed = {role: tk.BooleanVar() for role in workflow.ROLES}
         self.loading, self.preparing, self.closed = True, False, False
-        self.visibility_jobs = {}
+        self.pending_advanced_fields = set()
         self.saved = None
         self.configure_style()
         self.build()
@@ -368,6 +368,11 @@ class DesktopConfigurator:
         ttk.Label(advanced, text='Key variable', style='Card.TLabel').grid(row=0, column=0, padx=(0, 12))
         fields['key_env'] = ttk.Entry(advanced, textvariable=self.vars[role + '_key_env'])
         fields['key_env'].grid(row=0, column=1, sticky='ew')
+        def reveal_when_ready(event):
+            if role in self.pending_advanced_fields:
+                self.window.after_idle(lambda: self.reveal_advanced_field(role))
+        fields['key_env'].bind('<Map>', reveal_when_ready, add='+')
+        self.canvases[role].bind('<Configure>', reveal_when_ready, add='+')
         self.widgets[role]['advanced'] = advanced
         advanced.grid_remove()
         for widget in fields.values():
@@ -510,14 +515,24 @@ class DesktopConfigurator:
 
     def toggle_advanced(self, role):
         panel = self.widgets[role]['advanced']
-        panel.grid() if self.advanced[role].get() else panel.grid_remove()
-        if role in self.visibility_jobs:
-            self.window.after_cancel(self.visibility_jobs.pop(role))
         if self.advanced[role].get():
-            def reveal():
-                self.visibility_jobs.pop(role, None)
-                self.ensure_visible(role, self.widgets[role]['fields']['key_env'])
-            self.visibility_jobs[role] = self.window.after(30, reveal)
+            self.pending_advanced_fields.add(role)
+            panel.grid()
+            self.window.after_idle(lambda: self.reveal_advanced_field(role))
+        else:
+            self.pending_advanced_fields.discard(role)
+            panel.grid_remove()
+
+    def reveal_advanced_field(self, role):
+        if self.closed or role not in self.pending_advanced_fields:
+            return
+        field = self.widgets[role]['fields']['key_env']
+        # До первой раскладки Tk сообщает высоту области в один пиксель.
+        # События Map и Configure повторят попытку, когда поле поместится в окне.
+        if not field.winfo_ismapped() or self.canvases[role].winfo_height() < field.winfo_reqheight():
+            return
+        self.pending_advanced_fields.discard(role)
+        self.ensure_visible(role, field)
 
     def show_error(self, error):
         self.status_label.configure(foreground='#b42338')
@@ -759,8 +774,7 @@ class DesktopConfigurator:
     def close(self):
         self.closed = True
         self.window.after_cancel(self.poll_id)
-        for job in self.visibility_jobs.values():
-            self.window.after_cancel(job)
+        self.pending_advanced_fields.clear()
         self.window.update_idletasks()
         self.window.destroy()
 

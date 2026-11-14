@@ -262,9 +262,12 @@ class DesktopTests(unittest.TestCase):
         self.api()
         self.ui.advanced['exec'].set(True)
         self.ui.toggle_advanced('exec')
-        self.pump_until(lambda: 'exec' not in self.ui.visibility_jobs)
         canvas = self.ui.canvases['exec']
         field = self.ui.widgets['exec']['fields']['key_env']
+        def field_is_visible():
+            offset = field.winfo_rooty() - canvas.winfo_rooty()
+            return field.winfo_ismapped() and 0 <= offset <= canvas.winfo_height() - field.winfo_height()
+        self.pump_until(field_is_visible)
         self.assertGreaterEqual(field.winfo_rooty(), canvas.winfo_rooty())
         self.assertLessEqual(field.winfo_rooty() + field.winfo_height(),
                              canvas.winfo_rooty() + canvas.winfo_height())

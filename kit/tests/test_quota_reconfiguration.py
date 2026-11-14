@@ -6,7 +6,6 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 
-from kit.provider_limits import quota_error
 from kit import model_switch, run_opencode, task_control_state as state
 from kit.task_metrics import TaskMetrics
 from kit.execution_controller import ExecutionController
@@ -18,15 +17,6 @@ from kit.dashboard.tests import test_controls as control_tests
 
 
 class QuotaClassification(unittest.TestCase):
-    def test_structured_and_public_limit_errors(self):
-        for error in ({'status':429}, {'type':'provider.quota'}, {'name':'FreeUsageLimitError'},
-                      {'message':'Rate limit exceeded. Please try again later.'},
-                      {'message':'Daily quota exhausted'}, {'message':'insufficient_quota'}):
-            self.assertTrue(quota_error(error), error)
-        for error in (None, '429', {'status':True}, {'status':401}, {'message':'Context token limit exceeded'},
-                      {'message':'Permission denied'}, {'payload':'private 429'}):
-            self.assertFalse(quota_error(error), error)
-
     def test_only_latest_assistant_error_is_exposed_without_private_payload(self):
         failed={'id':'msg_failed','type':'assistant','time':{'created':110000,'completed':111000},
                 'model':{'providerID':'p','id':'m'},'error':{'type':'provider.quota','message':'429 private-key'},

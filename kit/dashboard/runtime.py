@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import sys
 import subprocess
 import threading
@@ -15,7 +16,14 @@ from urllib.parse import parse_qs, urlsplit
 import uuid
 
 from . import journal
-from . import tracking, observations, delivery
+from . import tracking, observations, delivery, stage_monitor
+from . import native_team_routes
+from ..native_team import team_for
+from ..project_vault import ProjectVault
+from .resource_observer import ResourceObserver
+from .workspace_navigation import WorkspaceNavigation
+from .stage_documents import DocumentConflict, read_document
+from ..stage_collaboration import discussion_risk_source
 from .launcher import SERVICE, VERSION, project_id, read_state, runtime_folder, write_state
 from ..task_metrics import TaskMetrics, corrected_events
 from .. import task_control_state
@@ -24,6 +32,12 @@ from .controls import TaskControls
 from .quota_monitor import QuotaMonitor
 
 PAGE = Path(__file__).resolve().parent / 'static' / 'runtime.html'
+
+
+def dashboard_display_text(root: Path, source: str) -> str:
+    """Подставляет название среды в текст интерфейса до загрузки данных пользователя."""
+    from ..runtime_selection import uses_pi_runtime
+    return source.replace('OpenCode', 'Pi') if uses_pi_runtime(root) else source
 
 
 def task_directory(root: Path, task: str) -> Path:
@@ -37,10 +51,32 @@ def task_directory(root: Path, task: str) -> Path:
     return directory
 
 
-def task_view(root: Path, task: str, reader=None) -> dict:
+def task_view(root: Path, task: str, reader=None, *, summary_only=False) -> dict:
     events = corrected_events(journal.read_events(task_directory(root, task) / 'events.jsonl'))
     result = journal.brief_summary(events)
     result.update(task=task, started_at=events[0]['at'], session=events[0].get('session'))
+    team = team_for(root, task)
+    activity_fields = ('kind', 'at') if team is not None else (
+        'kind', 'at', 'work_item', 'result', 'scope', 'status', 'reason')
+    result['activity'] = [
+        {key: event[key] for key in activity_fields if key in event}
+        for event in events[-30:]
+    ]
+    if team is not None:
+        # Здесь источником служит локальная команда. Обращение к чужому шлюзу могло бы
+        # подмешать в экран сообщения и модели другой среды.
+        native = team.operator_view(include_jobs=False) if summary_only else native_team_routes.public_team(team)
+        if result['status'] == 'finished':
+            native['status'] = 'finished'
+        if not summary_only:
+            from ..native_review_report import review_counts
+            counts = review_counts(native['jobs'])
+            result['work_runs'] += counts['reviews']
+            result['green_work_runs'] += counts['passed']
+            result['reworks'] += counts['reworks']
+        control = native_team_routes.control_view(native)
+        result.update(native_team=native, control=control, status=control['status'])
+        return result
     try:
         control = task_control_state.read_state(root, task)
         result['control'] = control
@@ -49,11 +85,6 @@ def task_view(root: Path, task: str, reader=None) -> dict:
     except (OSError, ValueError):
         result['control'] = {'status': 'error', 'error': 'Не удалось прочитать состояние управления задачей'}
         result['status'] = 'error'
-    result['activity'] = [
-        {key: event[key] for key in ('kind', 'at', 'work_item', 'result', 'scope', 'status', 'reason')
-         if key in event}
-        for event in events[-30:]
-    ]
     if reader is not None:
         try:
             live = reader.view(root, events)
@@ -106,9 +137,9 @@ def task_list(root: Path) -> list[dict]:
         if not directory.is_dir() or directory.name.startswith('.'):
             continue
         try:
-            view = task_view(root, directory.name)
+            view = task_view(root, directory.name, summary_only=True)
             rows.append({key: view[key] for key in ('task', 'title', 'status', 'started_at')})
-        except (OSError, ValueError):
+        except (OSError, ValueError, sqlite3.Error):
             continue
     return sorted(rows, key=lambda row: (row['started_at'], row['task']), reverse=True)
 
@@ -127,12 +158,15 @@ class DashboardServer(ThreadingHTTPServer):
         self.configurator = None
         self.configurator_lock = threading.Lock()
         super().__init__(('127.0.0.1', port), Handler)
+        self.resource_observer = ResourceObserver(self.root, WorkspaceNavigation(self.state()['base_url']))
 
     def serve_forever(self, poll_interval=.5):
         self.quota_monitor.start()
+        self.resource_observer.start()
         try:
             return super().serve_forever(poll_interval)
         finally:
+            self.resource_observer.stop()
             self.quota_monitor.stop()
 
     def open_configurator(self) -> dict:
@@ -224,6 +258,64 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('This server belongs to a different project')
         return values[0]
 
+    def stage_parameter(self, query, name, *, required=True):
+        values = query.get(name)
+        if values is None and not required:
+            return None
+        if not values or len(values) != 1 or not values[0]:
+            raise ValueError(f'Нужно одно значение параметра {name}.')
+        return values[0]
+
+    def read_stage(self, path, query):
+        parameter = lambda name: self.stage_parameter(query, name)
+        root = self.server.root
+        if path == '/api/stage':
+            data = stage_monitor.stage_view(root, self.stage_parameter(query, 'stage', required=False))
+            self.send_json(200, data)
+        elif path == '/api/stage/runs':
+            events = stage_monitor.run_events(root, parameter('task'))
+            self.send_json(200, {'runs': [{k: e.get(k) for k in stage_monitor.RUN_FIELDS} for e in events]})
+        elif path == '/api/stage/resource':
+            self.send_json(200, stage_monitor.resource_inputs(root, parameter('stage'), parameter('version')))
+        elif path == '/api/stage/document':
+            self.send_json(200, read_document(ProjectVault.load(root), parameter('stage'), parameter('feature'),
+                                              parameter('section'), self.stage_parameter(query, 'revision', required=False)))
+        elif path == '/api/stage/discussion-source':
+            note = discussion_risk_source(ProjectVault.load(root), parameter('stage'), parameter('thread'))
+            self.send_body(200, note.encode('utf-8'), 'text/plain; charset=utf-8')
+        elif path == '/api/stage/source':
+            note = stage_monitor.source(ProjectVault.load(root), parameter('stage'), parameter('feature'),
+                                        parameter('section'), self.stage_parameter(query, 'revision', required=False))
+            self.send_body(200, note.encode('utf-8'), 'text/plain; charset=utf-8')
+        else:
+            log = stage_monitor.run_log(root, parameter('task'), parameter('event'))
+            self.send_body(200, log.encode('utf-8'), 'text/plain; charset=utf-8')
+
+    def change_stage(self, path):
+        origin = self.headers.get('Origin', '')
+        allowed = (f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}')
+        token = self.headers.get('X-Dashboard-UI-Token', '')
+        if origin not in allowed or not token or not secrets.compare_digest(token, self.server.ui_token):
+            self.send_json(403, {'error': 'Недостаточно прав на изменение этапа.'})
+            return
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            limit = 6 * 1024**2 + 4096 if path == '/api/stage/document' else 65536
+            if (not 0 < length <= limit or self.headers.get('Transfer-Encoding') or urlsplit(self.path).query
+                    or self.headers.get('Content-Type', '').split(';')[0] != 'application/json'):
+                raise ValueError('Ожидается команда JSON для одного этапа.')
+            data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError('Укажите поля команды.')
+            result = stage_monitor.command(self.server.root, data, path.rsplit('/', 1)[-1])
+            self.send_json(200, result)
+        except DocumentConflict as error:
+            self.send_json(409, {'error': str(error)})
+        except (ValueError, UnicodeError) as error:
+            self.send_json(400, {'error': str(error)})
+        except (OSError, sqlite3.Error) as error:
+            self.send_json(503, {'error': f'Не удалось записать команду в базу этапа. {error}'})
+
     def do_GET(self):
         if not self.host_allowed():
             self.send_json(403, {'error': 'Forbidden Host'})
@@ -232,17 +324,34 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parts.query, keep_blank_values=True)
         try:
             if parts.path == '/':
-                body = PAGE.read_bytes()
+                body = dashboard_display_text(self.server.root, PAGE.read_text(encoding='utf-8')).encode('utf-8')
                 status, content_type = 200, 'text/html; charset=utf-8'
-            elif parts.path == '/localization.js':
-                body = PAGE.with_name('localization.js').read_bytes()
+            elif parts.path in ('/localization.js', '/native-team.js'):
+                body = PAGE.with_name(parts.path[1:]).read_bytes()
                 status, content_type = 200, 'text/javascript; charset=utf-8'
+            elif parts.path in ('/stage', '/stage.js', '/stage.css', '/stage-decisions.js',
+                                 '/stage-resources.js', '/stage-resources.css', '/stage-workspace.js', '/stage-workspace.css'):
+                name = 'stage.html' if parts.path == '/stage' else parts.path[1:]
+                media = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css'}
+                asset = PAGE.with_name(name)
+                body = asset.read_bytes()
+                status, content_type = 200, media[asset.suffix] + '; charset=utf-8'
+            elif parts.path in ('/api/stage', '/api/stage/source', '/api/stage/runs', '/api/stage/log',
+                                '/api/stage/resource', '/api/stage/document', '/api/stage/discussion-source'):
+                self.read_stage(parts.path, query)
+                return
             elif parts.path == '/api/i18n':
                 body = json.dumps({'saved_language': localization.saved_language(self.server.root),
-                                   'catalog': localization.catalog()}, ensure_ascii=False).encode('utf-8')
+                                   'catalog': {dashboard_display_text(self.server.root, key): dashboard_display_text(self.server.root, value)
+                                               for key, value in localization.catalog().items()}}, ensure_ascii=False).encode('utf-8')
                 status, content_type = 200, 'application/json; charset=utf-8'
             elif parts.path == '/api/health':
                 body = json.dumps(self.server.health(), ensure_ascii=False).encode('utf-8')
+                status, content_type = 200, 'application/json; charset=utf-8'
+            elif parts.path == '/api/chief-mode':
+                if query:
+                    raise ValueError('Состояние режима читается для открытого проекта.')
+                body = json.dumps(native_team_routes.public_mode(self.server.root)).encode('utf-8')
                 status, content_type = 200, 'application/json; charset=utf-8'
             elif parts.path == '/api/tasks':
                 body = json.dumps(task_list(self.server.root), ensure_ascii=False).encode('utf-8')
@@ -280,18 +389,23 @@ class Handler(BaseHTTPRequestHandler):
                         f'pre{{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}}a{{color:#9ec8ff}}</style><h1>{heading}</h1><p>{title}</p><pre>{text}</pre></html>').encode('utf-8')
                 status, content_type = 200, 'text/html; charset=utf-8'
             elif parts.path == '/api/report':
-                folder = task_directory(self.server.root, self.selected_task(query))
+                task = self.selected_task(query)
+                folder = task_directory(self.server.root, task)
                 report = folder / 'report.md'
                 if report.resolve().parent != folder.resolve():
                     raise ValueError('Report is outside the task directory')
-                if report.stat().st_size > 2 * 1024 * 1024:
-                    raise ValueError('Report exceeds 2 MiB')
-                events = TaskMetrics(self.server.root).read(self.selected_task(query))
+                metrics = TaskMetrics(self.server.root)
+                events = metrics.read(task)
                 finished = next((event for event in events if event['kind'] == 'finish'), None)
-                content = (TaskMetrics(self.server.root).render(self.selected_task(query), events,
-                           finished['usage'], finished.get('ended', finished['at']), self.language())
-                           if finished and isinstance(finished.get('usage'), dict) else report.read_text(encoding='utf-8-sig'))
+                if finished and isinstance(finished.get('usage'), dict):
+                    content = metrics.render(task, events, finished['usage'], finished.get('ended', finished['at']), self.language())
+                elif report.stat().st_size <= 2 * 1024 * 1024:
+                    content = report.read_text(encoding='utf-8-sig')
+                else:
+                    raise ValueError('Report exceeds 2 MiB')
                 body = content.encode('utf-8')
+                if len(body) > 2 * 1024 * 1024:
+                    raise ValueError('Report exceeds 2 MiB')
                 status, content_type = 200, 'text/plain; charset=utf-8'
             else:
                 body = b'{"error":"Not found"}'
@@ -302,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as error:
             body = json.dumps({'error': localization.diagnostic(str(error), self.language())}, ensure_ascii=False).encode('utf-8')
             status, content_type = 400, 'application/json; charset=utf-8'
-        except OSError as error:
+        except (OSError, sqlite3.Error) as error:
             print(f'Dashboard read failed: {error}', file=sys.stderr, flush=True)
             body = json.dumps({'error': localization.diagnostic('Cannot read dashboard data', self.language())}, ensure_ascii=False).encode('utf-8')
             status, content_type = 500, 'application/json; charset=utf-8'
@@ -312,7 +426,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_allowed():
             self.send_json(403, {'error': 'Forbidden Host'})
             return
-        if urlsplit(self.path).path == '/api/language':
+        path = urlsplit(self.path).path
+        if path in ('/api/chief-mode', '/api/native-team', '/api/native-partial'):
+            self.change_native(path)
+            return
+        if path in ('/api/stage/action', '/api/stage/decision', '/api/stage/resource', '/api/stage/document'):
+            self.change_stage(path)
+            return
+        if path == '/api/language':
             origin = self.headers.get('Origin', '')
             allowed = (f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}')
             token = self.headers.get('X-Dashboard-UI-Token', '')
@@ -354,7 +475,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(202, self.server.controls.request(data['task'], data['action']))
             except (ValueError, UnicodeError) as error:
                 self.send_json(400, {'error': str(error)})
-            except OSError:
+            except (OSError, RuntimeError, sqlite3.Error):
                 self.send_json(503, {'error': 'Не удалось сохранить действие управления задачей'})
             return
         if urlsplit(self.path).path in ('/api/models/open', '/api/project/open'):
@@ -383,6 +504,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(200, {'stopping': True})
         threading.Thread(target=self.server.shutdown, daemon=True).start()
+
+    def change_native(self, path):
+        origin = self.headers.get('Origin', '')
+        allowed = (f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}')
+        token = self.headers.get('X-Dashboard-UI-Token', '')
+        if origin not in allowed or not token or not secrets.compare_digest(token, self.server.ui_token):
+            self.send_json(403, {'error': 'Недостаточно прав для управления проектом.'})
+            return
+        try:
+            size = int(self.headers.get('Content-Length', '0'))
+            if (not 0 < size <= 4096 or self.headers.get('Transfer-Encoding') or urlsplit(self.path).query
+                    or self.headers.get('Content-Type', '').split(';')[0] != 'application/json'):
+                raise ValueError('Ожидается команда JSON без параметров URL.')
+            result = native_team_routes.command(self.server.root, path, json.loads(self.rfile.read(size)))
+            self.send_json(200, result)
+        except (ValueError, UnicodeError) as error:
+            self.send_json(400, {'error': str(error)})
+        except (OSError, RuntimeError, sqlite3.Error):
+            self.send_json(503, {'error': 'Команда не подтверждена. Обновите состояние перед повтором.'})
 
 
 def main(argv=None) -> int:

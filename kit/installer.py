@@ -14,12 +14,16 @@ import tempfile
 from urllib.parse import urlencode
 
 from .task_control_state import plain_path
+from .chief_mode import STATE as MODE_STATE, activation_file, encoded_state, mode_state, staged_path
 
 DOWNLOAD_URL = 'https://opencode.ai/download'
 MANIFEST = Path('.metrics/.kit-installation.json')
-IGNORE_LINES = ('.metrics/', '.opencode/kit-models.json', '.opencode/opencode.jsonc',
+PI_MANIFEST = Path('.metrics/.pi-kit-installation.json')
+AGENTS = {'opencode': 'OpenCode', 'pi': 'Pi', 'codex': 'Codex', 'claude': 'Claude Code'}
+LINUX_DESKTOP_NAMES = ('opencode', 'opencode-desktop', 'ai.opencode.desktop')
+IGNORE_LINES = ('.metrics/', '.tools/', '.pi/', '.opencode/kit-models.json', '.opencode/opencode.jsonc',
                 '.opencode/opencode.jsonc.tmp', '__pycache__/', '*.pyc')
-ROOT_FILES = ('AGENTS.md', 'opencode.jsonc', 'install.py', 'install.cmd', 'install.sh')
+ROOT_FILES = ('AGENTS.md', 'opencode.jsonc', 'install.py', 'install.cmd', 'install.sh', 'start.cmd', 'start.sh')
 # docs/ carries the guides: docs/user (setup and use), docs/kit (how the kit works), docs/history.
 TREES = ('kit', '.opencode/commands', 'docs')
 SKIP = {'.git', '.metrics', '__pycache__', '.venv', 'node_modules', '.aws', '.ssh',
@@ -41,18 +45,26 @@ def desktop_from_path(application: Path) -> Desktop | None:
     path = Path(application).expanduser().resolve()
     if path.name.endswith('.app') and path.is_dir():
         cli = path / 'Contents/Resources/opencode-cli'
-    elif path.is_file() and path.name.lower() in ('opencode.exe', 'opencode', 'opencode-desktop', 'opencode.appimage'):
+    elif path.is_file() and path.name.lower() in (*LINUX_DESKTOP_NAMES, 'opencode.exe', 'opencode.appimage'):
         cli = path.parent / 'resources' / ('opencode-cli.exe' if path.suffix.lower() == '.exe' else 'opencode-cli')
     else:
         return None
-    return Desktop(path, cli) if cli.is_file() else None
+    if cli.is_file():
+        return Desktop(path, cli)
+    # В Linux-пакете Electron CLI может поставляться отдельно от приложения.
+    if sys.platform.startswith('linux') and path.name in ('ai.opencode.desktop', 'opencode-desktop'):
+        command = shutil.which('opencode')
+        if command and Path(command).resolve() != path:
+            return Desktop(path, Path(command))
+    return None
 
 
 def find_desktop() -> Desktop | None:
     """Search common vendor installation locations and Windows App Paths."""
     candidates = []
     if sys.platform == 'win32':
-        for variable, suffix in (('LOCALAPPDATA', 'Programs/@opencodedesktop/OpenCode.exe'),
+        for variable, suffix in (('LOCALAPPDATA', 'Programs/ai.opencode.desktop/OpenCode.exe'),
+                                 ('LOCALAPPDATA', 'Programs/@opencodedesktop/OpenCode.exe'),
                                  ('LOCALAPPDATA', 'Programs/OpenCode/OpenCode.exe'),
                                  ('ProgramFiles', 'OpenCode/OpenCode.exe')):
             if os.environ.get(variable):
@@ -71,7 +83,7 @@ def find_desktop() -> Desktop | None:
         candidates += [Path('/Applications/OpenCode.app'), Path.home() / 'Applications/OpenCode.app']
     else:
         candidates += [Path(prefix) / name for prefix in ('/opt/OpenCode', '/opt/opencode', '/usr/lib/opencode')
-                       for name in ('opencode', 'opencode-desktop')]
+                       for name in LINUX_DESKTOP_NAMES]
     for name in ('OpenCode.exe', 'opencode-desktop'):
         if executable := shutil.which(name):
             candidates.append(Path(executable))
@@ -135,13 +147,36 @@ def installed(project: Path) -> bool:
     """A previous installation can reopen settings; never silently upgrade it."""
     try:
         value = json.loads(plain_path(project / MANIFEST).read_text(encoding='utf-8'))
-        return value.get('format') == 1 and all(plain_path(project / name).is_file()
-            for name in ('AGENTS.md', 'opencode.jsonc', 'kit/run_opencode.py'))
+        return (value.get('format') == 1 and isinstance(value.get('files'), dict)
+                and all(name in value['files'] for name in ('AGENTS.md', 'kit/run_opencode.py'))
+                and ('opencode.jsonc' in value['files'] or value.get('agent') == 'pi' and 'pi-kit.json' in value['files'])
+                and plain_path(project / 'kit/run_opencode.py').is_file())
     except (OSError, ValueError, AttributeError):
         return False
 
 
-def install_project(source: Path, destination: str) -> dict:
+def project_agent(project):
+    """У старых проектов среда определяется по прежнему выбору шлюза."""
+    path = plain_path(Path(project) / MANIFEST)
+    data = json.loads(path.read_bytes()) if path.is_file() else {}
+    if 'agent' in data:
+        if data['agent'] not in AGENTS:
+            raise InstallError('Unknown project agent.')
+        return data['agent']
+    from .runtime_selection import uses_pi_runtime
+    return 'pi' if uses_pi_runtime(Path(project)) else 'opencode'
+
+
+def project_payload(source, agent):
+    files = payload(source)
+    if agent != 'opencode':
+        from .install_chief_skill import AGENT_FOLDERS, SKILL_FILE
+        relative = (Path(AGENT_FOLDERS[agent]) / SKILL_FILE).as_posix()
+        files[relative] = files[(Path('kit') / SKILL_FILE).as_posix()]
+    return files
+
+
+def install_project(source: Path, destination: str, *, agent='opencode') -> dict:
     """Create missing folders and install without overwriting existing project data.
 
     Preflight all conflicts. Exclusive file creation prevents a race from replacing
@@ -149,14 +184,23 @@ def install_project(source: Path, destination: str) -> dict:
     Existing model settings, project code, TASK.md and README.md remain untouched.
     """
     project = project_path(destination, source)
+    if agent not in AGENTS:
+        raise InstallError('Unknown project agent.')
     if installed(project):
         return {'project': str(project), 'reused': True, 'files': 0}
-    files = payload(source)
-    for name in ('kit', 'AGENTS.md', 'opencode.jsonc', 'opencode.json', '.opencode/opencode.jsonc', '.opencode/opencode.json'):
+    files = project_payload(source, agent)
+    if agent == 'pi':
+        if plain_path(project / 'pi-kit.json').exists():
+            from .runtime_selection import uses_pi_runtime
+            if not uses_pi_runtime(project):
+                raise InstallError('Existing pi-kit.json selects a different runtime.')
+        else:
+            files['pi-kit.json'] = b'{"format":1,"runtime":"pi","defaults":{"executors":{"source":"lmstudio"}}}\n'
+    for name in ('kit', '.metrics/.chief-mode', MANIFEST):
         if (project / name).exists():
             raise InstallError('This folder already has OpenCode configuration or a kit. Choose another folder; nothing was replaced.')
     for name in files:
-        target = plain_path(project / name)
+        target = staged_path(project, name) if activation_file(name) else plain_path(project / name)
         if target.exists() or any(parent.exists() and not parent.is_dir() for parent in target.parents):
             raise InstallError('Some kit files already exist in this folder. Choose another folder; nothing was replaced.')
     created, directories = {}, []
@@ -198,7 +242,7 @@ def install_project(source: Path, destination: str) -> dict:
     try:
         mkdir(project)
         for name, content in files.items():
-            path = project / name
+            path = staged_path(project, name) if activation_file(name) else project / name
             mkdir(path.parent)
             create(path, content)
         if old_ignore is None:
@@ -207,8 +251,10 @@ def install_project(source: Path, destination: str) -> dict:
             if ignore.read_bytes() != old_ignore:
                 raise InstallError('The project changed during installation. Try again.')
             replace_ignore(ignore_bytes)
-        mkdir((project / MANIFEST).parent)
-        metadata = {'format': 1, 'installed_at': datetime.now(timezone.utc).isoformat(),
+        # В новом проекте инструкции Чифа становятся видимыми агентам только при включении.
+        mkdir((project / MODE_STATE).parent)
+        create(project / MODE_STATE, encoded_state(dict(status='off', files=sorted(n for n in files if activation_file(n)))))
+        metadata = {'format': 1, 'agent': agent, 'installed_at': datetime.now(timezone.utc).isoformat(),
                     'files': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
         content = json.dumps(metadata, ensure_ascii=True, indent=2).encode()
         create(project / MANIFEST, content)
@@ -235,7 +281,7 @@ def open_project(desktop: Desktop, project: Path):
     manual Open Project fallback in the installer.
     """
     project = plain_path(Path(project).absolute())
-    if not installed(project) or not (project / '.opencode/opencode.jsonc').is_file():
+    if not installed(project) or (mode_state(project)['enabled'] and not (project / '.opencode/opencode.jsonc').is_file()):
         raise InstallError('Prepare the project models before opening OpenCode.')
     if desktop_from_path(desktop.application) != desktop:
         raise InstallError('OpenCode Desktop was not found. Install it or choose its application file.')

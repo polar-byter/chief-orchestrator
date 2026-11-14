@@ -1,0 +1,40 @@
+#stage-risks {margin-top:24px;padding:20px 0 0;border-block-start:1px solid var(--line);}
+#stage-risks,#stage-document-editor,#discussion-heading {scroll-margin-block:18px;}
+.risk-totals {display:flex;gap:6px 22px;flex-wrap:wrap;color:var(--muted);font-variant-numeric:tabular-nums;}
+.risk-totals strong {color:var(--accent);}
+.risk-card {padding:0;margin:0;border-block-start:1px solid var(--line);}
+.risk-card:first-of-type {margin-top:14px;}
+.risk-card summary {display:list-item;width:100%;padding:10px 0;overflow-wrap:anywhere;}
+.risk-card summary > * {display:inline-block;vertical-align:top;}
+.risk-card summary > strong {width:45%;padding-inline-end:12px;}
+.risk-card summary > span {width:24%;color:var(--text);font-size:.9rem;}
+.risk-card small {display:block;margin-top:2px;}
+.risk-card .inline {padding:6px 0 14px;}
+.risk-passport {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px 20px;margin:10px 0;}
+.risk-passport dt {color:var(--muted);font-size:.85rem;}
+.risk-passport dd {margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.risk-issues {color:var(--warning);padding-inline-start:1.4em;}
+.risk-topic {padding:4px 0 8px;}
+#stage-document-editor nav {margin:10px 0;}
+#stage-document-editor [aria-current="page"] {color:var(--text);text-decoration:none;font-weight:600;}
+.doc-actions {margin-block:12px;}
+#stage-document-editor form {max-width:100%;}
+#stage-document-editor textarea,#stage-document-editor pre {font: .94rem/1.5 Consolas,"Courier New",monospace;tab-size:4;}
+#stage-document-editor pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;}
+#stage-document-editor [data-doc-author] {max-width:30rem;}
+#stage-document-editor [data-doc-conflict] {padding:12px 14px;border-inline-start:3px solid var(--warning);background:var(--surface);}
+#stage-document-editor [data-doc-conflict] button {margin:8px 8px 0 0;}
+#stage-document-editor [data-doc-receipt] {overflow-wrap:anywhere;}
+[data-doc-impact] {margin-block:22px 10px;padding-block-start:14px;border-block-start:1px solid var(--line);}
+[data-doc-impact] h4 {margin:14px 0 4px;}
+[data-doc-impact] p {margin:6px 0;}
+.doc-impact-traces {padding:0;list-style:none;}
+.doc-impact-traces li {padding-block:8px;overflow-wrap:anywhere;}
+.doc-impact-traces blockquote {margin:4px 0;padding-inline-start:10px;border-inline-start:2px solid var(--line);white-space:pre-wrap;}
+.doc-impact-traces .inline {margin-block-start:4px;}
+@media(max-width:640px){
+  .risk-card summary > strong {width:calc(100% - 22px);}
+  .risk-card summary > span {width:auto;margin:4px 15px 0 18px;}
+  .risk-passport {grid-template-columns:1fr 1fr;}
+}
+@media(max-width:420px){.risk-passport {grid-template-columns:1fr;}}

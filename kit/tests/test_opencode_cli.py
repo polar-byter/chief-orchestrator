@@ -46,6 +46,13 @@ class OpencodeSearchOrder(unittest.TestCase):
             self.assertEqual(run_opencode.find_opencode('opencode'), '/usr/local/bin/opencode')
             self.assertEqual(task_metrics.resolve_opencode('opencode'), '/usr/local/bin/opencode')
 
+    def test_current_desktop_install_with_obsolete_path_wrapper(self):
+        native = self.local / opencode_cli.CURRENT_DESKTOP_CLI
+        native.parent.mkdir(parents=True)
+        native.touch()
+        with self.on_path({'opencode': r'C:\obsolete\opencode.cmd'}):
+            self.assertEqual(opencode_cli.locate_opencode(), str(native))
+
     def test_explicit_command_wins_over_desktop(self):
         self.install_desktop()
         with self.on_path({r'D:\tools\opencode.exe': r'D:\tools\opencode.exe'}):

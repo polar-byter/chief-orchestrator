@@ -4,6 +4,54 @@
 > into a new project. The kit is language-agnostic: only the sections marked `# EDIT` are
 > specific to a project. Edit those for each new project.
 
+## Development and living documentation
+
+Use the Spec-Anchored workflow in `docs/kit/DEVELOPMENT_METHOD.ru.md`:
+Specify behavior and acceptance, Plan contracts and dependencies, define
+verifiable Tasks, then Implement and Validate with the existing protocol.
+Maintain the applicable specification alongside code; reuse existing documents
+for small changes. Preserve the user's complete requested scope. Distinguish
+requirements, implementation decisions and observed verification results.
+Update affected instructions, prompts, guides and both READMEs with the change.
+For a project managed by the Chief, run `kit/python.cmd -m kit.project_docs init`
+(Linux: `sh kit/python.sh -m kit.project_docs init`) at project onboarding or
+when the user asks to open its documentation. This command delivers Obsidian,
+opens the bound vault and starts local intake. When planning or changing a
+stage or feature, inspect `project_docs list`, reuse its key and add newly
+agreed records with `project_docs add`. The card and `open --key KEY --section workspace`
+lead to the requirements, BDD, NFR, effort and risk documents for that ID.
+Use `project_docs overview` for cross-feature work. Put an assigned Markdown
+task in its source feature document with `#рп`, `#аналитик` or `#инженеры`.
+Complete it in that document. The project overview reads the same tasks and
+their feature keys, published estimates and revision history.
+For a stage review open the project dashboard's Stage monitor. Use the
+risk ID to discuss its reserve and record the observed outcome in the source
+passport. Reconcile a changed document against the latest saved text. Keep the
+save receipt separate from approval of a feature revision. Keep the stage,
+feature and revision when switching teams. Record questions for the responsible
+role and link each verified invariant to its source, execution task and actual
+test event. Use the management tab for estimate proposals and decisions.
+The whole-stage resource plan, capacity, calendar, pricing and dated work or
+expense entries belong to the management tab. Keep the source and date with
+each entry. Use actual time records for human labor and saved plan versions
+to compare planned and registered hours at the same date.
+For effort, keep O/M/P in person-hours per work ID. The project manager assigns
+one reserve decision per risk ID. Read the calculated total in the workspace
+and preserve the inputs and assumptions with the feature. Maintain these
+documents with the corresponding code and decisions. Read saved
+requests with `pending`; use the submitted document snapshots as their scope.
+For a delivered request, keep its task, key and base revision. After acceptance
+use `project_docs accept --task` with its finished task and actual evidence.
+Manual acceptance is for a human reviewing the result. See docs/user/PROJECT_DOCUMENTATION.ru.md.
+For the kit itself, use the v4 role boundaries. The project manager owns scope,
+effort and risk. The analyst specifies examples and measurable quality criteria.
+The engineering lead (Chief) owns module boundaries, contracts, tests and acceptance.
+Record estimate assumptions separately from risk responses. Link approvals and
+verification to the revision they cover. Use the two methods linked from the
+development guide. Keep domain decisions independent of UI and provider formats.
+When a flow changes, update its diagram, source walkthrough and test references
+in docs/kit/DEVELOPER_GUIDE.ru.md.
+
 ## Build pipeline (mandatory)
 The Master Chief writes the blueprint; the executor only pours concrete.
 
@@ -66,7 +114,11 @@ Loop guards (defaults; set others at `start` with `--max-reworks`, `--max-no-res
 ## Rules
 - One subagent — one small complete class or cohesive source file; a function is appropriate for an isolated correction or a justified split.
 - Keep the Master Chief for planning, architecture, marketing, and review. Routine code goes to the selected executor.
-- Code, comments, and identifiers: English. Human-facing docs: Russian is fine.
+- Use meaningful English identifiers. In the kit's own sources write new or revised
+  comments, docstrings and skeleton contracts in natural Russian. Explain why
+  a decision is needed, including invariants and failure cases. Omit generator
+  signatures, chat references and boilerplate. For application code follow the
+  target project's language conventions.
 
 ## Isolated workers and bounded correction
 
@@ -184,6 +236,9 @@ See docs/kit/PYTHON_RUNTIME.ru.md for bootstrap architecture and supported syste
 - Read the plan at the start of a session and update the same resolved file after major steps. Existing knowledge-base notes are background/history, not alternative active plans.
 
 ## Source snapshot boundaries
+
+The Pi runtime uses generated `.tools/` and `.pi/` directories. The snapshot
+excludes them alongside `.metrics/`; keep application sources outside these paths.
 `delegate` reads all project files except generated directories `.git`, `.metrics`, `__pycache__`, `.venv`, `node_modules`, `target`, `build`, `dist`, `bin`, `obj`. Do not store application source in excluded directories. Symlinks/junctions outside excluded directories cause an error instead of being followed. Keep review evidence and transient logs in `.metrics/`; do not edit unrelated files before inspect. After inspect, the Master Chief may add requirement tests; all changes after the latest green test require another run before acceptance.
 
 ## Failed isolated attempts

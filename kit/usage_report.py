@@ -9,15 +9,20 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 if __package__:
     from .journal import session_id, valid_number
     from .opencode_cli import locate_opencode
     from .suite_runner import CATEGORY_NO_RESULT, CATEGORY_TIMEOUT
+    from .runtime_selection import uses_pi_runtime
 else:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from journal import session_id, valid_number
     from opencode_cli import locate_opencode
     from suite_runner import CATEGORY_NO_RESULT, CATEGORY_TIMEOUT
+    from runtime_selection import uses_pi_runtime
 
 TOKEN_FIELDS = ('input', 'output', 'reasoning', 'cache_read', 'cache_write')
 
@@ -206,6 +211,9 @@ class UsageReportMixin:
 
     def export_session(self, executable: str, sid: str) -> dict:
         """Export one session, trying the newer CLI command before the legacy one."""
+        if uses_pi_runtime(self.root):
+            from kit.runtimes.pi_gateway import PiSessionControl
+            return PiSessionControl(self.root).export_session(sid)
         try:
             export = self.cli_json(executable, ['session', 'export', sid])
         except ValueError:
@@ -243,6 +251,9 @@ class UsageReportMixin:
     # collect OpenCode exports for a session and its children, using the CLI to fetch data and handling pagination and errors
     def collect_exports(self, session: str, executable: str = 'opencode') -> list[dict]:
         session_id(session)
+        if uses_pi_runtime(self.root):
+            from kit.runtimes.pi_gateway import collect_session_exports
+            return collect_session_exports(self.root, session)
         executable = resolve_opencode(executable)
         queue, seen, exports = [session], set(), []
         while queue:
@@ -284,10 +295,16 @@ class UsageReportMixin:
         tests = [e for e in events if e['kind'] == 'test']
         lines = [t('## 📊 Task report · {title}', title=label(events[0]['title'])), '',
                  t('⏱ Time: **{minutes} min {seconds} sec**', minutes=duration // 60, seconds=duration % 60), '']
+        native_counts = dict(reworks=0, reviews=0, passed=0)
+        if usage.get('native_reviews'):
+            from kit.native_review_report import report_lines, review_counts
+            snapshot = usage['native_reviews']
+            lines.extend(report_lines(snapshot, t))
+            native_counts = review_counts(snapshot['jobs'])
         for group, heading in [('paid', 'Paid models'), ('local', 'Free / local · LM Studio'),
                                ('free', 'Free cloud · OpenRouter / OpenCode'), ('unknown', 'Unknown provider')]:
             rows = [r for r in usage['models'] if r['group'] == group]
-            if group in ('free', 'unknown') and not rows:
+            if (usage.get('native_reviews') or group in ('free', 'unknown')) and not rows:
                 continue
             lines += ['### ' + t(heading), '']
             if not rows:
@@ -300,14 +317,17 @@ class UsageReportMixin:
             lines.append('')
         work_tests = [e for e in tests if e.get('phase') != 'baseline']
         lines += [t('🔁 Rework requests: **{reworks}** · Reviews recorded: **{reviews}**',
-                    reworks=sum(e['result'] == 'rework' for e in reviews), reviews=len(reviews)), '']
+                    reworks=sum(e['result'] == 'rework' for e in reviews) + native_counts['reworks'],
+                    reviews=len(reviews) + native_counts['reviews']), '']
         failed_attempts = sum(e['result'] == 'failed' for e in reviews)
         blocked_attempts = sum(e['result'] == 'blocked' for e in reviews)
         if blocked_attempts:
             lines += [t('Infrastructure interruptions: **{count}**. Partial source is preserved; code repair budgets are unchanged.', count=blocked_attempts), '']
         if failed_attempts:
             lines += [t('⚠️ Executor failures without a result (error, limit, unavailable model): **{count}**. These are not reworks: no files changed.', count=failed_attempts), '']
-        lines += [t('🧪 Fully successful runs: **{passed} of {total}**', passed=sum(e['status'] == 'passed' for e in work_tests), total=len(work_tests)), '']
+        lines += [t('🧪 Fully successful runs: **{passed} of {total}**',
+                    passed=sum(e['status'] == 'passed' for e in work_tests) + native_counts['passed'],
+                    total=len(work_tests) + native_counts['reviews']), '']
         if len(work_tests) != len(tests):
             lines += [t('Initial checks before implementation (baseline): **{count}**; excluded from successful work runs.', count=len(tests) - len(work_tests)), '']
         full = [e for e in tests if e.get('scope', 'full') == 'full' and e.get('phase') != 'baseline']
@@ -349,7 +369,7 @@ class UsageReportMixin:
             last = tests[-1]
             lines += [t('Last run: **{status}** · tests: {tests} · failures: {failures} · errors: {errors} · skipped: {skipped}.',
                         status=label(last['status']), **{key: count(last[key]) for key in ('tests', 'failures', 'errors', 'skipped')}), '']
-        else:
+        elif not native_counts['reviews']:
             lines += [t('No tests were run through the utility; success is unconfirmed.'), '']
         bindings = [e for e in events if e['kind'] == 'attempt_session']
         if bindings:

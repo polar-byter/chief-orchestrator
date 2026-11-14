@@ -7,7 +7,8 @@ import uuid
 
 from .. import task_control_state as state
 from ..task_metrics import TaskMetrics, is_halted, session_id, valid_number
-from .session_control import ControlError, SessionControl
+from .session_control import ControlError
+from ..runtime_selection import check_task_runtime, create_session_gateway, uses_pi_runtime
 
 ACTIONS = {'pause': 'pausing', 'resume': 'resuming', 'cancel': 'cancelling', 'delete': 'deleting'}
 
@@ -15,11 +16,21 @@ ACTIONS = {'pause': 'pausing', 'resume': 'resuming', 'cancel': 'cancelling', 'de
 class TaskControls:
     def __init__(self, root: Path, gateway=None):
         self.root = Path(root).resolve()
-        self.gateway = gateway or SessionControl(self.root)
+        self._gateway = gateway
         self._lock = threading.Lock()
         self._workers = {}
 
+    @property
+    def gateway(self):
+        """Дашборд может жить дольше текущей настройки среды проекта."""
+        return self._gateway or create_session_gateway(self.root)
+
     def view(self, task):
+        from ..native_team import team_for
+        from .native_team_routes import control_view
+        native = team_for(self.root, task)
+        if native is not None:
+            return control_view(native.operator_view(include_jobs=False))
         with self._lock:
             value = state.read_state(self.root, task)
             if value.get('status') in state.TRANSITIONS and task not in self._workers:
@@ -39,7 +50,8 @@ class TaskControls:
         if action == 'delete' and not metrics.task_dir(task).exists() and state.read_state(self.root, task).get('session_removed'):
             return [], None
         events = metrics.read(task)
-        if events[0].get('server_mode') in ('standalone', 'unknown'):
+        check_task_runtime(self.root, events[0])
+        if events[0].get('server_mode') in ('standalone', 'unknown') and not uses_pi_runtime(self.root):
             raise ValueError('Для этой задачи не подтверждён общий сервер Desktop. Управление из дашборда недоступно')
         if (metrics.task_dir(task) / 'events.jsonl').resolve().parent != metrics.task_dir(task):
             raise ValueError('Journal must not be redirected')
@@ -81,6 +93,16 @@ class TaskControls:
     def request(self, task, action, *, limit=None):
         if action not in ACTIONS:
             raise ValueError('Неизвестное действие')
+        if action == 'resume':
+            from ..chief_mode import mode_state, require_enabled
+            if mode_state(self.root)['explicit']:
+                require_enabled(self.root)
+        from .. import native_team
+        from .native_team_routes import control_view
+        if native_team.team_for(self.root, task) is not None:
+            if action == 'delete':
+                raise ValueError('Для управляемой команды доступна отмена с сохранением истории.')
+            return control_view(native_team.perform(self.root, task, 'limit' if limit is not None else action))
         # Recovery is performed before taking the worker mutex again.
         self.view(task)
         with self._lock:
@@ -173,9 +195,11 @@ class TaskControls:
                 if value.get('settings_revision'):
                     self.gateway.prepare_resume(sid, task)
                 # Let the metrics CLI run as soon as the admitted prompt starts.
-                state.write_state(self.root, task, **dict(details, status='resuming', allow_execution=True))
-                resume_issued = True
-                self.gateway.resume(sid, task, value['operation_id'])
+                from ..chief_mode import gateway_admission
+                with gateway_admission(self.root):
+                    state.write_state(self.root, task, **dict(details, status='resuming', allow_execution=True))
+                    resume_issued = True
+                    self.gateway.resume(sid, task, value['operation_id'])
                 status, message = 'running', 'Продолжение передано основной модели; частичные изменения требуют проверки.'
             else:
                 if sid and not value.get('session_removed'):

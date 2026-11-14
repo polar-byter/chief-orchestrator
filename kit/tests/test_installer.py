@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch, Mock
 
 from kit import installer
+from kit.chief_mode import mode_state, set_mode, staged_path
 
 
 class InstallerTests(unittest.TestCase):
@@ -26,6 +27,24 @@ class InstallerTests(unittest.TestCase):
 
     def install(self):
         return installer.install_project(self.source, str(self.target))
+
+    def test_selected_cli_and_skill_survive_restart_and_mode_change(self):
+        from kit.install_chief_skill import AGENT_FOLDERS, SKILL_FILE
+        skill = self.source / 'kit' / SKILL_FILE
+        skill.parent.mkdir(parents=True)
+        skill.write_text('project skill', encoding='utf-8')
+        for agent in ('pi', 'codex', 'claude'):
+            with self.subTest(agent=agent):
+                target = self.target / agent
+                installer.install_project(self.source, str(target), agent=agent)
+                self.assertEqual(installer.project_agent(target), agent)
+                self.assertFalse(mode_state(target)['enabled'])
+                entry = target / AGENT_FOLDERS[agent] / SKILL_FILE
+                self.assertFalse(entry.exists())
+                set_mode(target, True)
+                self.assertEqual(entry.read_bytes(), skill.read_bytes())
+                set_mode(target, False)
+                self.assertFalse(entry.exists())
 
     def desktop(self):
         app = self.home / 'Desktop with spaces' / 'OpenCode.exe'
@@ -58,14 +77,15 @@ class InstallerTests(unittest.TestCase):
 
     def test_repeat_setup_reuses_project_and_preserves_saved_models(self):
         self.install()
+        (self.target / '.opencode').mkdir(exist_ok=True)
         (self.target / '.opencode/kit-models.json').write_text('saved choice', encoding='utf-8')
         (self.source / 'opencode.jsonc').write_text('new release', encoding='utf-8')
         self.assertTrue(self.install()['reused'])
-        self.assertEqual((self.target / 'opencode.jsonc').read_text(), 'template opencode.jsonc')
+        self.assertEqual(staged_path(self.target, 'opencode.jsonc').read_text(), 'template opencode.jsonc')
         self.assertEqual((self.target / '.opencode/kit-models.json').read_text(), 'saved choice')
 
     def test_existing_configuration_is_rejected_before_any_changes(self):
-        for name in ('AGENTS.md', 'opencode.json', 'kit', '.opencode/opencode.jsonc', 'docs/guide.md'):
+        for name in ('kit', '.metrics/.chief-mode', 'docs/guide.md'):
             with self.subTest(name=name), tempfile.TemporaryDirectory(dir=self.home) as directory:
                 target = Path(directory)
                 path = target / name
@@ -138,6 +158,8 @@ class InstallerTests(unittest.TestCase):
         source = Path(__file__).resolve().parents[2]
         result = installer.install_project(source, str(self.target))
         self.assertFalse(result['reused'])
+        self.assertFalse(mode_state(self.target)['enabled'])
+        set_mode(self.target, True)
         run_opencode.prepare(self.target)
         config = json.loads(run_opencode.strip_jsonc((self.target / '.opencode/opencode.jsonc').read_text(encoding='utf-8')))
         self.assertEqual(config['agents']['executor']['model'], 'opencode/mimo-v2.6-flash-free')
@@ -154,9 +176,26 @@ class InstallerTests(unittest.TestCase):
         self.assertIsNone(installer.desktop_from_path(cli))
         self.assertEqual(installer.desktop_from_path(self.desktop().application), self.desktop())
 
+    def test_linux_desktop_accepts_a_separate_cli_and_prefers_the_bundled_one(self):
+        application = self.home / 'OpenCode' / 'ai.opencode.desktop'
+        application.parent.mkdir()
+        application.touch()
+        with patch.object(installer.sys, 'platform', 'linux'), patch.object(installer.shutil, 'which') as which:
+            which.return_value = None
+            self.assertIsNone(installer.desktop_from_path(application))
+            which.return_value = str(application)
+            self.assertIsNone(installer.desktop_from_path(application))
+            separate_cli = self.home / 'opencode'
+            separate_cli.touch()
+            which.return_value = str(separate_cli)
+            self.assertEqual(installer.desktop_from_path(application), installer.Desktop(application, separate_cli))
+            cli = application.parent / 'resources/opencode-cli'
+            cli.parent.mkdir()
+            cli.touch()
+            self.assertEqual(installer.desktop_from_path(application), installer.Desktop(application, cli))
+
     def test_desktop_request_encodes_folder_and_never_sends_a_prompt(self):
         self.install()
-        (self.target / '.opencode/opencode.jsonc').write_text('{}', encoding='utf-8')
         desktop = self.desktop()
         with patch.object(installer.subprocess, 'Popen', return_value=Mock()) as launch:
             installer.open_project(desktop, self.target)
@@ -170,6 +209,7 @@ class InstallerTests(unittest.TestCase):
 
     def test_open_requires_prepared_project(self):
         self.install()
+        set_mode(self.target, True)
         with patch.object(installer.subprocess, 'Popen') as launch:
             with self.assertRaises(installer.InstallError):
                 installer.open_project(self.desktop(), self.target)

@@ -22,6 +22,8 @@
     select { flex: 1; min-width: 0; max-width: 100%; }
     button { cursor: pointer; }
     button:disabled { opacity: .5; cursor: wait; }
+    #chief-mode-toggle::before { content: ''; display: inline-block; width: 1.8em; height: 1em; margin-right: .55em; vertical-align: -.12em; border-radius: 1em; background: radial-gradient(circle at .5em 50%, #eef3fa .32em, transparent .35em), #526174; }
+    #chief-mode-toggle[aria-checked="true"]::before { background: radial-gradient(circle at 1.3em 50%, #eef3fa .32em, transparent .35em), #29774e; }
     a { color: #9ec8ff; }
     .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 26px; }
     .card, .activity { background: #192333; border: 1px solid #29374c; border-radius: 12px; padding: 20px; }
@@ -38,6 +40,12 @@
     .activity { margin-bottom: 16px; overflow-wrap: anywhere; }
     .activity p { line-height: 1.6; }
     .compact { padding-left: 20px; line-height: 1.8; }
+    .repair-chain { padding: .3em 0; list-style: none; }
+    .repair-chain > strong { font-family: ui-monospace, monospace; }
+    .repair-chain ol { padding: 0; margin: .65em 0 1em; list-style: none; }
+    .repair-chain ol li { border-left: 3px solid #536379; padding: .35em .9em; margin-bottom: .5em; }
+    .repair-chain [data-verdict="failed"] { border-color: #dd986e; }
+    .repair-chain [data-verdict="passed"] { border-color: #62bc99; }
     progress { width: 100%; accent-color: #8bdfb2; }
     .work-row { border-top: 1px solid #29374c; padding: 14px 0; }
     summary { cursor: pointer; }
@@ -71,7 +79,7 @@
 <body>
 <main>
   <header>
-    <div><div class="eyebrow muted" data-i18n="OpenCode · task dashboard">OpenCode · task dashboard</div><h1 id="title" data-i18n="Loading task…">Loading task…</h1><div id="project-name" class="muted"></div></div>
+    <div><div id="dashboard-caption" class="eyebrow muted" data-i18n="OpenCode · task dashboard">OpenCode · task dashboard</div><h1 id="title" data-i18n="Loading task…">Loading task…</h1><div id="project-name" class="muted"></div></div>
     <div><label for="language-select" data-i18n="Language">Language</label>
       <select id="language-select"><option value="en">English</option><option value="ru">Русский</option></select>
       <span id="connection" class="badge" data-i18n="Connecting…">Connecting…</span></div>
@@ -81,6 +89,11 @@
     <button id="refresh" type="button" data-i18n="Refresh">Refresh</button>
     <button id="ongoing-tasks" type="button" disabled title="Open this project&#x27;s latest running task" data-i18n-title="Open this project&#x27;s latest running task" data-i18n="In progress: 0">In progress: 0</button>
     <button id="model-settings" type="button" data-i18n="Model settings">Model settings</button>
+    <a href="/stage" data-i18n="Stage monitor">Stage monitor</a>
+  </div>
+  <div class="toolbar" id="chief-mode">
+    <button id="chief-mode-toggle" type="button" role="switch" aria-checked="false" disabled data-i18n="Chief mode">Chief mode</button>
+    <span id="chief-mode-state" class="muted" role="status" aria-live="polite"></span>
   </div>
   <p id="settings-message" class="muted" role="status" aria-live="polite"></p>
   <div class="toolbar" aria-label="Selected task controls" data-i18n-aria-label="Selected task controls">
@@ -93,6 +106,13 @@
   <p id="provider-warning" class="provider-warning" role="alert" hidden></p>
   <p id="reconfigure-hint" class="muted" hidden data-i18n="To change API or models: pause → Model settings → Save and Prepare OpenCode → Resume. The task history is preserved.">To change API or models: pause → Model settings → Save and Prepare OpenCode → Resume. The task history is preserved.</p>
   <p id="message" role="status" aria-live="polite"></p>
+  <section class="activity" id="native-team" hidden aria-labelledby="native-team-title">
+    <h2 id="native-team-title"></h2>
+    <p id="native-team-state"></p>
+    <div class="actions" id="native-team-actions"></div>
+    <ul class="compact" id="native-team-jobs"></ul>
+    <p id="native-team-feedback" class="muted" role="status" aria-live="polite"></p>
+  </section>
   <section id="live-work" class="live-work" hidden aria-labelledby="live-title">
     <div class="eyebrow muted" data-i18n="Current work">Current work</div>
     <h2 id="live-title" data-i18n="Working now">Working now</h2>
@@ -121,13 +141,13 @@
     </div>
     <p id="project-message" class="muted" role="status" aria-live="polite"></p>
   </section>
-  <nav class="tabs" role="tablist" aria-label="Task views" data-i18n-aria-label="Task views">
+  <nav id="task-tabs" class="tabs" role="tablist" aria-label="Task views" data-i18n-aria-label="Task views">
     <button id="overview-tab" role="tab" aria-selected="true" aria-controls="overview" data-i18n="Overview">Overview</button>
     <button id="details-tab" role="tab" aria-selected="false" aria-controls="details" data-i18n="Work details">Work details</button>
     <button id="tokens-tab" role="tab" aria-selected="false" aria-controls="tokens" data-i18n="Tokens">Tokens</button>
   </nav>
   <div id="overview" role="tabpanel" aria-labelledby="overview-tab">
-  <section class="activity">
+  <section id="task-work-summary" class="activity">
     <h2 data-i18n="What is happening">What is happening</h2>
     <p id="stage" data-i18n="Reading task…">Reading task…</p>
     <p id="models" class="muted"></p>
@@ -167,6 +187,7 @@
   <footer><span id="task-id" class="muted"></span><a id="report" hidden target="_blank" rel="noopener" data-i18n="Open final report">Open final report</a><span class="muted" data-i18n="Refreshes every 2 seconds">Refreshes every 2 seconds</span></footer>
 </main>
 <script src="/localization.js"></script>
+<script src="/native-team.js"></script>
 <script>
   'use strict';
   let localization = KitLocalization.create();
@@ -185,24 +206,34 @@
   let controlFailure = '';
   function renderControls(data) {
     selectedData = data;
-    const state = data?.status, session = !!data?.session;
+    NativeTeamPanel.render(data?.native_team || null, t);
+    const state = data?.status, native = data?.native_team, session = !!(native || data?.session);
+    element('task-tabs').hidden = Boolean(native);
+    element('task-work-summary').hidden = Boolean(native);
+    element('dashboard-caption').textContent = t(native ? 'Chief · task dashboard' : 'OpenCode · task dashboard');
+    if (native && element('overview').hidden) showTab('overview');
     const warning = element('provider-warning');
     warning.hidden = data?.control?.reason !== 'provider_limit';
     warning.textContent = warning.hidden ? '' : `${t(data.control.warning || 'Provider quota or rate limit reached. Task paused; change models or wait before continuing.')}${data.control.quota_model ? ' · ' + data.control.quota_model : ''}`;
-    element('reconfigure-hint').hidden = state !== 'paused';
+    element('reconfigure-hint').hidden = Boolean(native) || state !== 'paused';
     const pending = controlPending || ['pausing', 'resuming', 'cancelling', 'deleting'].includes(state);
     element('pause-task').disabled = pending || !session || !['running', 'halted'].includes(state);
-    element('resume-task').disabled = pending || !session || state !== 'paused';
+    element('resume-task').disabled = pending || !session || state !== 'paused' || !NativeTeamPanel.enabled() ||
+      Boolean(native?.jobs.some(job => job.status === 'interrupted'));
     element('cancel-task').disabled = pending || !session || !['running', 'halted', 'paused', 'error'].includes(state);
-    element('delete-task').disabled = pending || !data || state === 'deleted' || (!session && state !== 'finished');
+    element('delete-task').disabled = Boolean(native) || pending || !data || state === 'deleted' || (!session && state !== 'finished');
     element('control-message').textContent = t(data?.control?.error || controlFailure || (pending ?
-      (['pausing', 'resuming', 'cancelling', 'deleting'].includes(state) ? labels()[state] : t("Sending action…")) : data?.control?.message || ''));
+      (['pausing', 'resuming', 'cancelling', 'deleting'].includes(state) ? labels()[state] : t("Sending action…")) : (state === 'finished' ? '' : data?.control?.message || '')));
   }
   async function controlTask(action) {
     const task = activeTask;
     if (!task || controlPending || selectedData?.task !== task) return;
     if (action === 'delete' && !window.confirm(t("Delete this task, its sessions and metrics? All its models will be stopped. Application files will remain."))) return;
     if (action === 'cancel' && !window.confirm(t("Cancel this task and all its executors? Code and history will remain."))) return;
+    if (selectedData.native_team) {
+      await NativeTeamPanel.act(action);
+      return;
+    }
     controlPending = true; controlFailure = ''; renderControls(selectedData);
     let failure = '';
     try {
@@ -334,7 +365,7 @@
         const row = document.createElement('tr'), name = document.createElement('td');
         name.textContent = model.provider + '/' + model.model;
         const role = document.createElement('span'); role.className = 'muted';
-        const roles = (model.roles || []).map(value => value === 'master_chief' ? 'Master Chief' : t("Executor"));
+        const roles = (model.roles || []).map(value => value === 'master_chief' ? 'Master Chief' : value === 'bug_fixer' ? 'Bug Fixer' : t("Executor"));
         role.textContent = tr`${roles.join(' / ') || t("Role unknown")} · messages: ${formatCount(model.messages)}`;
         name.append(role); row.append(name);
         for (const field of Object.keys(tokenFields())) {
@@ -444,9 +475,18 @@
   function render(data) {
     renderControls(data);
     renderTokens(data); renderCompletion(data);
-    renderWork(data);
+    if (data.native_team) {
+      element('live-work').hidden = true;
+      liveStarted = null;
+      for (const id of ['current-function', 'function-count']) element(id).textContent = '';
+      for (const id of ['architecture', 'function-progress']) element(id).hidden = true;
+    } else {
+      renderWork(data);
+    }
     document.getElementById('title').textContent = data.title;
-    document.title = data.title + ' · OpenCode';
+    document.title = data.native_team
+      ? data.title + (data.native_team.agent === 'codex' ? ' · Codex' : ' · Claude Code')
+      : data.title + ' · OpenCode';
     document.getElementById('status').textContent = labels()[data.status] || data.status;
     document.getElementById('event-count').textContent = data.event_count;
     document.getElementById('runs').textContent = `${data.green_work_runs} / ${data.work_runs}`;
@@ -482,6 +522,7 @@
       const expectedProject = parameters.get('project');
       if (expectedProject && expectedProject !== metadata.project.id) throw new Error(t("This page belongs to a different project"));
       document.getElementById('project-name').textContent = metadata.project.name;
+      await NativeTeamPanel.loadMode(metadata.project.id, t, readJSON);
       const tasks = await readJSON('/api/tasks');
       latestTasks = tasks;
       const ongoing = tasks.filter(task => task.status === 'running');
@@ -532,6 +573,7 @@
   }
 
   async function main() {
+    NativeTeamPanel.mount(() => refreshTask());
     try {
       const response = await fetch('/api/i18n');
       if (!response.ok) throw new Error('Language data unavailable');

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Рабочие места этапа · Чиф</title>
+  <link rel="stylesheet" href="/stage.css">
+  <link rel="stylesheet" href="/stage-resources.css">
+  <link rel="stylesheet" href="/stage-workspace.css">
+  <script defer src="/stage.js"></script>
+  <script defer src="/stage-decisions.js"></script>
+  <script defer src="/stage-resources.js"></script>
+  <script defer src="/stage-workspace.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <nav class="crumbs" aria-label="Навигация"><a href="/">Дашборд Чифа</a> <span aria-hidden="true">/</span> <span>Монитор этапа</span></nav>
+    <div class="stage-header"><div><p id="project-name" class="muted"></p><h1 id="stage-title">Рабочие места этапа</h1></div><div class="freshness"><span id="stage-revision"></span><span id="last-update"></span></div></div>
+    <div id="selectors" class="selectors" hidden>
+      <label>Этап<select id="stage-select"></select></label>
+      <label>Фича<select id="feature-select"></select></label>
+      <label>Версия документов<select id="record-revision"></select></label>
+      <a id="archive-link" hidden target="_blank" rel="noopener">Открыть редакцию</a>
+    </div>
+    <div id="record-documents" class="inline" hidden></div>
+    <p id="revision-hint" class="muted" hidden></p>
+  </header>
+  <p id="status" role="status" aria-live="polite">Загружаем проект…</p>
+  <div id="monitor" hidden>
+    <div id="tabs" role="tablist" aria-label="Рабочие места этапа">
+      <button type="button" role="tab" id="tab-manager" aria-selected="true" aria-controls="panel-manager" data-team="manager">Управление</button>
+      <button type="button" role="tab" id="tab-analyst" aria-selected="false" tabindex="-1" aria-controls="panel-analyst" data-team="analyst">Анализ</button>
+      <button type="button" role="tab" id="tab-engineer" aria-selected="false" tabindex="-1" aria-controls="panel-engineer" data-team="engineer">Инженеры</button>
+      <button type="button" role="tab" id="tab-joint" aria-selected="false" tabindex="-1" aria-controls="panel-joint" data-team="joint">Совместная работа</button>
+    </div>
+    <section id="panel-manager" role="tabpanel" aria-labelledby="tab-manager">
+      <section id="stage-resources" hidden></section>
+      <section id="stage-risks" hidden></section>
+      <details><summary>Оценки по фичам</summary><div id="management-metrics" class="metrics"></div><div id="feature-estimates" class="ledger"></div></details>
+      <section id="stage-decisions" hidden></section>
+    </section>
+    <section id="panel-analyst" role="tabpanel" aria-labelledby="tab-analyst" hidden>
+      <h2>Требования и проверки</h2><div id="analysis-checks" class="ledger"></div>
+    </section>
+    <section id="panel-engineer" role="tabpanel" aria-labelledby="tab-engineer" hidden>
+      <h2>Запуски проверок</h2><div id="test-history"></div>
+    </section>
+    <section id="panel-joint" role="tabpanel" aria-labelledby="tab-joint" hidden>
+      <h2>Передача работы</h2><div id="handoffs" class="ledger"></div>
+    </section>
+    <section id="stage-document-editor" hidden></section>
+    <section id="assignments">
+      <h2 id="assignments-heading">Поручения</h2>
+      <p id="assignment-counts" class="assignment-counts"></p>
+      <progress id="assignment-progress" aria-labelledby="assignment-counts" hidden></progress>
+      <div id="task-list" class="ledger"></div>
+    </section>
+    <section id="trace-section" hidden>
+      <h2>От инварианта до проверки</h2>
+      <label class="picker" id="trace-picker" hidden>Связь<select id="trace-select"></select></label>
+      <div id="trace-view"></div>
+      <details id="new-trace"><summary>Связать инвариант с задачей</summary>
+        <form id="trace-form">
+          <div class="fields">
+            <label>Пункт этапа<select id="trace-feature"></select></label>
+            <label>Раздел<select id="trace-section-key"><option value="requirements">Требования</option><option value="bdd">BDD</option><option value="nfr">NFR</option></select></label>
+            <label>Источник правила<select id="trace-source"><option value="working">Рабочий документ</option><option value="archive">Архивная редакция</option></select></label>
+            <label>Редакция фичи<input id="trace-revision" type="number" min="1" step="1" required></label>
+            <label>ID инварианта<input id="trace-invariant" required maxlength="100" placeholder="Например, INV-01"></label>
+            <label>Задача из журнала<select id="trace-task" required></select></label>
+          </div>
+          <a id="trace-input-link" target="_blank" rel="noopener">Открыть выбранный источник</a>
+          <label>Точная цитата правила<textarea id="trace-rule" rows="2" maxlength="4000" required></textarea></label>
+          <div class="fields">
+            <label>Запуск тестов<select id="trace-run"><option value="">Пока не связан</option></select></label>
+            <label>Отдельный тест, если указан в логе<input id="trace-case" maxlength="350" disabled></label>
+            <label>Роль автора<select id="trace-role" class="role-options"></select></label>
+            <label>Имя автора<input id="trace-author" maxlength="100"></label>
+          </div>
+          <p class="form-status" id="trace-status" role="status"></p><button type="submit" class="primary">Сохранить связь</button>
+        </form>
+      </details>
+    </section>
+    <section aria-labelledby="discussion-heading">
+      <h2 id="discussion-heading">Обсуждение</h2>
+      <details id="new-question"><summary>Задать вопрос</summary>
+        <form id="ask-form">
+          <label>Тема или ID инварианта<input id="ask-subject" maxlength="160" required></label>
+          <div class="fields">
+            <label>От кого<select id="ask-role" class="role-options"></select></label>
+            <label>Кому<select id="ask-assignee" class="role-options"></select></label>
+            <label>Имя автора<input id="ask-author" maxlength="100"></label>
+          </div>
+          <label>Вопрос<textarea rows="2" id="ask-text" required maxlength="3000"></textarea></label>
+          <label class="flag"><input id="ask-blocking" type="checkbox">Блокирует решение по этапу</label>
+          <p class="form-status" id="ask-status" role="status"></p><button type="submit" class="primary">Отправить вопрос</button>
+        </form>
+      </details>
+      <p id="threads-empty" class="empty"></p>
+      <div id="thread-detail" hidden>
+        <label class="picker">Тема<select id="thread-select"></select></label>
+        <div id="thread-view"></div>
+        <form id="message-form">
+          <div class="fields">
+            <label>От кого<select id="reply-role" class="role-options"></select></label>
+            <label>Кому<select id="reply-assignee" class="role-options"></select></label>
+            <label>Имя автора<input id="reply-author" maxlength="100"></label>
+          </div>
+          <label id="reply-label" for="reply-text">Ответ</label><textarea rows="2" id="reply-text" maxlength="3000" required></textarea>
+          <p class="form-status" id="reply-status" role="status"></p><button type="submit" class="primary" id="reply-submit">Ответить</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

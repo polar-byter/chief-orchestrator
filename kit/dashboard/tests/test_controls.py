@@ -185,6 +185,17 @@ class Controls(unittest.TestCase):
         self.assertFalse(self.gateway.prompts)
         with self.assertRaises(TaskHalted): self.metrics.read_events_if_work_allowed('task')
 
+    def test_resume_in_disabled_project_keeps_gateway_idle(self):
+        from kit.chief_mode import STATE, encoded_state
+        self.perform('pause')
+        marker = self.root / STATE
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(encoded_state({'status': 'off', 'files': []}))
+        with self.assertRaisesRegex(ValueError, 'Режим Чифа'):
+            self.controls.request('task', 'resume')
+        self.assertEqual(self.controls.view('task')['status'], 'paused')
+        self.assertEqual(self.gateway.prompts, [])
+
     def test_resume_failure_blocks_work_without_resetting_guard(self):
         self.perform('pause')
         self.gateway.resume = Mock(side_effect=ControlError('No confirmation'))

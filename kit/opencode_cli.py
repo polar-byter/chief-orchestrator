@@ -17,6 +17,7 @@ import shutil
 
 DEFAULT_COMMAND = 'opencode'
 DESKTOP_CLI = Path('Programs') / '@opencodedesktop' / 'resources' / 'opencode-cli.exe'
+CURRENT_DESKTOP_CLI = Path('Programs/ai.opencode.desktop/resources/opencode-cli.exe')
 WRAPPER_SUFFIXES = ('.cmd', '.bat')
 
 
@@ -29,12 +30,13 @@ def desktop_cli() -> str | None:
     """Path of the CLI inside OpenCode Desktop, or None when it is not installed."""
     local = os.environ.get('LOCALAPPDATA')
     if local:
-        path = Path(local) / DESKTOP_CLI
-        try:
-            if path.is_file():
-                return str(path)
-        except OSError:
-            pass
+        for relative in (CURRENT_DESKTOP_CLI, DESKTOP_CLI):
+            path = Path(local) / relative
+            try:
+                if path.is_file():
+                    return str(path)
+            except OSError:
+                continue
     if os.name != 'nt':
         if __package__:
             from .installer import find_desktop

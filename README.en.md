@@ -1,4 +1,13 @@
-# OpenCode: the Master Chief and executors
+# Chief for OpenCode, Pi, Codex and Claude Code
+
+Run `install.cmd` on Windows or `sh install.sh` on Linux. Select the agent
+and a project folder. Only OpenCode requires Desktop. For Pi the wizard checks
+for a compatible SDK and can install Pi 1.3.0 in the project with Node.js and npm. New projects
+start with Chief off. Run `start.cmd` or `sh start.sh` to reopen the selected agent.
+For a Linux OpenCode Desktop package with a separate CLI, check that `opencode --version` works in a terminal.
+To upgrade either previous kit, start the new distribution outside the project
+and select the existing folder. Use `--update PATH --preview` to inspect changes.
+[Migration and release guide (Russian)](docs/user/DISTRIBUTION.ru.md).
 
 > Русская версия: [README.md](README.md) · Step-by-step start: [QUICKSTART.en.md](docs/user/QUICKSTART.en.md) · [Быстрый старт (RU)](docs/user/QUICKSTART.ru.md) · [Beginner guide](docs/user/OPENCODE_KIT.en.md)
 
@@ -15,12 +24,112 @@ each builds a small section exactly as drawn, and several can work at the same t
 The Bug Fixer redoes a section that did not work out.
 Your part is to say what you need, answer questions and accept the result.
 
+In the project’s Obsidian vault, open **Монитор Чифа**, choose a feature and
+follow **Риски** to its risk register. A risk links to its work item, reserve
+decision, discussion and source note. The dashboard can edit requirements,
+BDD, NFR, effort and risks. When another editor saves first, it keeps your draft
+and shows the latest text for reconciliation. Accepted revisions remain available
+from the revision selector. [Workspace walkthrough](docs/user/PROJECT_DOCUMENTATION.ru.md#от-риска-к-документу-и-обратно).
+
+## Kit development and contributor guides
+
+Chief is a per-project option. Fresh installations start with Chief off. OpenCode,
+Pi, Codex and Claude Code then use the project’s ordinary instructions and CLI
+settings. Existing Chief installations retain their mode on upgrade. In the local
+dashboard, use **Chief mode** below the task selector, or run
+`.\kit\python.cmd -m kit.chief_mode on` from the project. Use `off` to restore
+the ordinary profile and `status` to inspect the switch. Open a new CLI session
+to load the selected profile.
+
+With Chief enabled, a managed Codex or Claude team can run queued assignments.
+An engineer returns a candidate for one assigned file. The operator can pause
+the team, reconcile interrupted work and integrate a reviewed candidate.
+[Commands and queue semantics (Russian)](docs/user/PROJECT_DOCUMENTATION.ru.md#режим-проекта-и-очередь-исполнителей).
+
+**Automatic repair for Codex and Claude Code (AC-04).** Supply a frozen test
+with `--contract` and `--test python -m unittest …` when queuing an executor.
+After an assertion fails, Chief gives the fixer the rejected file, original
+requirements, test and remaining attempt budget. The dashboard and final report
+show the two attempts together. Exhausting the budget stops further handoffs.
+[Worked example (Russian)](docs/user/PROJECT_DOCUMENTATION.ru.md#передача-файла-исправителю-ac-04).
+
+**Provider interruptions in Codex and Claude Code (AC-05).** The project team
+panel shows the interrupted CLI attempt and model, and offers the received file
+for inspection when one exists. An API failure pauses the queue. A quota limit
+removes waiting assignments. An operator can retry with the original model
+and repair budget once access is restored. [Recovery walkthrough (Russian)](docs/user/PROJECT_DOCUMENTATION.ru.md#отказ-провайдера-ac-05).
+
+For cross-agent development, see [the kit's purpose, current compatibility and
+migration plan (Russian)](docs/kit/AGENT_COMPATIBILITY.ru.md). OpenCode is the default.
+The unified Chief distribution includes the Pi broker for the controller and task dashboard.
+To select it, add `{"runtime":"pi"}` in the project's `pi-kit.json` and follow the
+[Pi setup guide (Russian)](docs/user/PI_QUICKSTART.ru.md). Use the bundled Python
+to run `-m kit.project_docs configure --agent codex` or `--agent claude` to
+deliver vault requests to that CLI. Select `--agent default` to restore the
+project gateway. The [compatibility matrix](docs/kit/AGENT_COMPATIBILITY.ru.md)
+records which runtimes support worker supervision and which paths were exercised.
+
+From an installed project, run `.\kit\python.cmd -m kit.install_chief_skill --agent codex`
+to install the [shared Chief skill](kit/skills/chief-orchestrator/SKILL.md).
+Supported target directories are selected by `codex`, `claude`, `pi` or `opencode`.
+From the **new kit distribution**, run
+`.\kit\python.cmd -m kit.update_project --project "D:\My Project"` for an
+upgrade preview. Add `--apply` to apply eligible changes. Then run
+`-m kit.install_chief_skill --root "D:\My Project" --agent codex` for your
+selected agent. Local skill edits are preserved, with the new revision alongside
+them for review.
+The v4 [specification (Russian)](docs/kit/UNIVERSAL_KIT_SPEC.ru.md) defines
+the **Workspace**, available in Obsidian, as the primary view for one product capability and
+**Three perspectives** as the project overview for the project manager, analyst
+and engineering team. It covers behavior examples, quality criteria and approvals.
+Planning uses separate methods for [effort estimation](docs/kit/EFFORT_ESTIMATION.ru.md)
+and [risk assessment](docs/kit/RISK_ASSESSMENT.ru.md), both in Russian.
+Open **Три контура** on the vault home page and select a role. Each assignment
+links to its source feature document. Add a Markdown task such as
+`- [ ] #аналитик Clarify the acceptance criterion` to that document. Use
+`#рп` for the project manager or `#инженеры` for engineering. Completing the
+task in the source note removes it from the role's list.
+**Stage monitor.** Open **Stage monitor** in the local task dashboard. The Russian
+stage page has four views for management, analysis, engineering and joint work.
+Stage, feature and source revision stay selected when switching views. Teams
+can ask, reply and reopen questions. A rule links its exact source text to a
+registered task, a test run and, when the log identifies it, an individual test.
+A project manager can submit, approve or reject stage estimates, or authorize
+automatic decisions within a recorded limit. [Stage workflow](docs/user/PROJECT_DOCUMENTATION.ru.md).
+
+The management tab also shows the whole stage's effort, each team's load for a
+selected period, forecast finish and cost. Enter capacity, calendars, dependencies,
+hourly rates and API pricing in **Задать ресурсный план**. Record dated time or
+expense entries with **Внести факт**. The chart compares cumulative actual hours
+with the saved plan for the same date. Missing estimates and rates remain visible.
+[Resource planning walkthrough](docs/user/PROJECT_DOCUMENTATION.ru.md#ресурсы-всего-этапа).
+Open [kit/open-project-docs.cmd](kit/open-project-docs.cmd) on Windows or run
+`sh kit/open-project-docs.sh` on Linux. The Chief locates or installs Obsidian
+and opens a dedicated project vault. A feature card links directly to its editable
+requirements, BDD scenarios, NFRs, effort estimate and risk register. Each note links
+back to the same card. Engineers enter O/M/P in person-hours, the analyst clarifies
+scope, and the project manager assigns each risk to its work items and selects its
+treatment. Saving either note refreshes the PERT estimate, per-item deviation and
+total including reserve. An 8/12/24 estimate gives 13.3 person-hours. A risk already
+included in P adds zero. A separate 2-hour allowance for a different risk brings
+the total to 15.3. From the workspace
+select **Запросить доработку**, describe the change and tick **Передать Чифу**.
+The request captures all five documents at submission. Delivery receipts and
+accepted revisions remain accessible from the same record.
+[Setup, revision workflow and moving the vault (Russian)](docs/user/PROJECT_DOCUMENTATION.ru.md).
+
+The [source walkthrough for Java developers (Russian)](docs/kit/DEVELOPER_GUIDE.ru.md)
+covers isolated work, task control, concurrent dashboard starts and scrolling
+in the settings window, with links to the implementation and its tests.
+The [development method (Russian)](docs/kit/DEVELOPMENT_METHOD.ru.md)
+describes how to keep that guide current as the kit changes.
+
 ## How it works — in eight diagrams
 
 The diagrams are animated; their data is sample data. The same diagrams with detailed
 steps are in the [quick start](docs/user/QUICKSTART.en.md).
 
-### 1. Installation in four steps
+### 1. Installing for OpenCode Desktop in four steps
 
 You need [OpenCode Desktop](https://opencode.ai/download) and this repository's
 ZIP (**Code → Download ZIP**). The installer automatically prepares pinned Python

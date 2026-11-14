@@ -3,7 +3,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const elements = new Map(input.ids.map(id => [id, {
   textContent: '', hidden: false, disabled: false, value: '', className: '',
-  replaceChildren() {}, add() {}, addEventListener() {}, querySelectorAll() { return []; }
+  replaceChildren() {}, add() {}, addEventListener() {}, setAttribute() {}, querySelectorAll() { return []; }
 }]));
 const context = {
   document: {getElementById: id => {assert(elements.has(id), id); return elements.get(id);}},
@@ -13,9 +13,17 @@ const context = {
   refreshCount: 0, requests: []
 };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(require('path').join(__dirname, '../static/native-team.js'), 'utf8'), context);
 vm.runInContext(input.source.replace(/\s*main\(\);\s*$/, ''), context);
 const run = code => vm.runInContext(code, context);
 (async () => {
+  // При открытии страницы режим проекта загружается раньше, чем карточка задачи.
+  const loadMode = enabled => run(`NativeTeamPanel.loadMode('project', text => text, async () =>
+    ({project:'project', status:'${enabled ? 'on' : 'off'}', enabled:${enabled}}))`);
+  await loadMode(false);
+  run(`renderControls({task:'first',session:'ses_root',status:'paused'});`);
+  assert.equal(elements.get('resume-task').disabled, true);
+  await loadMode(true);
   run(`renderControls({task:'first',session:'ses_root',status:'paused'});`);
   assert.equal(elements.get('resume-task').disabled, false);
   assert.equal(elements.get('pause-task').disabled, true);
@@ -55,6 +63,7 @@ const run = code => vm.runInContext(code, context);
   assert.equal(run('selectedData.task'),'second');
   assert.equal(elements.get('control-message').textContent,'');
   context.fetch=async url=>({ok:true,json:async()=>url==='/api/health'?{project:{id:'project',name:'test'}}:
+    url==='/api/chief-mode'?{project:'project',enabled:true,status:'on'}:
     url==='/api/tasks'?[]:{status:'deleted',message:'Deleted'}});
   context.originalRefresh=refresh;
   run(`refreshTask=originalRefresh;activeTask='first';controlFailure='';`);

@@ -19,10 +19,12 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 try:
+    from .task_control_state import plain_path
     from .check_env import strip_jsonc
     from .lmstudio_models import base_url, configured_model, loaded_models, select_model
     from .opencode_cli import is_wrapper, locate_opencode
 except ImportError:
+    from task_control_state import plain_path
     from check_env import strip_jsonc
     from lmstudio_models import base_url, configured_model, loaded_models, select_model
     from opencode_cli import is_wrapper, locate_opencode
@@ -220,8 +222,7 @@ def _prepare(root: Path, explicit: str | None = None):
     for agent, filename in prompt_names.items():
         prompt = root / 'kit' / 'prompts' / filename
         if prompt.is_file():
-            if prompt.resolve() != prompt.absolute():
-                raise ValueError('Role prompts must be regular project files')
+            plain_path(prompt)
             patch['agents'][agent] = {'system': prompt.read_text(encoding='utf-8')}
     model = None
     if executors['source'] == 'lmstudio':
@@ -298,6 +299,9 @@ def describe(root: Path, model) -> str:
 
 
 def main(argv=None) -> int:
+    if not __package__:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from kit.chief_mode import mode_state
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model', help='loaded LM Studio instance ID (required only for ambiguous selection)')
     parser.add_argument('--prepare-only', action='store_true', help='prepare the config before opening the project in the desktop app')
@@ -309,6 +313,17 @@ def main(argv=None) -> int:
         parser.error('--reload requires --prepare-only')
     root = Path.cwd()
     try:
+        mode = mode_state(root)
+        if mode['explicit'] and not mode['enabled']:
+            if mode['status'] != 'off':
+                raise ValueError('Завершите переключение режима Чифа.')
+            if args.prepare_only or args.reload:
+                raise ValueError('Режим Чифа выключен. Включите его в дашборде или командой '
+                                 'kit/python.cmd -m kit.chief_mode on, затем повторите подготовку.')
+            arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
+            from kit.run_agent import ordinary_command
+            command = ordinary_command(root, 'opencode') if args.opencode == 'opencode' else [find_opencode(args.opencode)]
+            return subprocess.call([*command, *arguments], cwd=root)
         executable = None
         if not args.prepare_only or args.reload:
             executable = find_opencode(args.opencode)

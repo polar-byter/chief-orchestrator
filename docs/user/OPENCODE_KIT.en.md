@@ -12,6 +12,11 @@ tests and token usage. A token is a unit of text counted by a model.
 
 ## Windows setup
 
+New installations start with Chief off. After the wizard copies the kit, run
+`.\kit\python.cmd -m kit.chief_mode on` from the installed project before
+preparing the team’s models. The dashboard also has a **Chief mode** switch
+below the task selector. Leave it off to use your usual agent settings.
+
 ![The setup wizard](../../readme_gif/en/01_install_live.gif)
 
 1. Install **OpenCode Desktop for Windows** from the [official download page](https://opencode.ai/download). Use Desktop 2.x. Installing only the terminal CLI does not install Desktop.

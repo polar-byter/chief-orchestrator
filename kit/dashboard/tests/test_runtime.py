@@ -57,6 +57,18 @@ class RuntimeHTTP(unittest.TestCase):
         self.assertIn('Refreshes every 2 seconds', text)
         self.assertIn('id="language-select"', text)
 
+    def test_pi_project_uses_its_runtime_name_and_translations(self):
+        (self.root / 'pi-kit.json').write_text(json.dumps({'runtime': 'pi'}), encoding='utf-8')
+        code, _, page = self.request('/')
+        self.assertEqual(code, 200)
+        self.assertIn("data.title + ' · Pi'", page)
+        self.assertIn('Prepare Pi', page)
+        self.assertNotIn('Prepare OpenCode', page)
+        code, _, body = self.request('/api/i18n')
+        self.assertEqual(code, 200)
+        catalog = json.loads(body)['catalog']
+        self.assertEqual(catalog['Pi task'], 'Задача Pi')
+
     def test_task_id_selects_the_right_journal(self):
         for task, title in [('first', 'Первая <b>задача</b>'), ('second', 'Вторая задача')]:
             code, _, text = self.request('/api/task?' + urlencode({'task': task, 'project': project_id(self.root)}))
@@ -106,6 +118,10 @@ class RuntimeHTTP(unittest.TestCase):
         self.assertIn('text/plain', headers['Content-Type'])
         self.assertEqual(text, (self.metrics.task_dir('first') / 'report.md').read_text(encoding='utf-8'))
         self.assertIn('Первая &lt;b&gt;задача&lt;/b&gt;', text)
+        # finish мог сохраниться за мгновение до падения процесса, записывавшего report.md.
+        (self.metrics.task_dir('first') / 'report.md').unlink()
+        status, _, restored = self.request('/api/report?task=first')
+        self.assertEqual((status, restored), (200, text))
 
     def test_stop_requires_own_token(self):
         self.assertEqual(self.request('/api/stop', 'POST')[0], 403)

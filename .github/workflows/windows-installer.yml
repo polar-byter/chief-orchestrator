@@ -6,6 +6,7 @@ on:
     paths:
       - 'kit/**'
       - 'install.*'
+      - 'start.*'
       - 'AGENTS.md'
       - '.github/workflows/windows-installer.yml'
 permissions:

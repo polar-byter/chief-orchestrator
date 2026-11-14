@@ -29,6 +29,27 @@ class InstallerWindowTests(unittest.TestCase):
             self.ui.refresh_desktop()
         self.assertNotIn('disabled', self.ui.primary.state())
 
+    def test_cli_agents_only_probe_the_selected_executable(self):
+        with patch.object(installer, 'find_desktop', side_effect=AssertionError('Запрошен чужой агент')), \
+                patch('kit.run_agent.ordinary_command', return_value=['selected-agent']) as locate:
+            with patch.object(installer_ui.pi_setup, 'locate_pi_command', return_value=['node', 'pi-cli.js']) as pi:
+                self.ui.agent_choice.set(installer.AGENTS['pi'])
+                self.ui.refresh_desktop()
+                pi.assert_called_once()
+                self.assertNotIn('disabled', self.ui.primary.state())
+                locate.assert_not_called()
+            for key in ('codex', 'claude'):
+                with self.subTest(key=key):
+                    self.ui.agent_choice.set(installer.AGENTS[key])
+                    self.ui.refresh_desktop()
+                    self.assertEqual(locate.call_args.args[1], key)
+                    self.assertNotIn('disabled', self.ui.primary.state())
+                    self.assertFalse(self.ui.open_check.winfo_manager())
+            locate.side_effect = ValueError('CLI отсутствует')
+            self.ui.refresh_desktop()
+            self.assertIn('disabled', self.ui.primary.state())
+            self.assertIn('Claude Code', self.ui.desktop_status.cget('text'))
+
     def test_language_switch_keeps_custom_path_and_prompt(self):
         self.ui.path.set(str(self.root / 'Мой проект'))
         self.ui.prompt.delete('1.0', 'end')

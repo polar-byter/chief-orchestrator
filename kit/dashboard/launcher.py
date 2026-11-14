@@ -18,7 +18,7 @@ import webbrowser
 from ..task_metrics import TaskMetrics
 
 SERVICE = 'opencode-kit-dashboard'
-VERSION = 1
+VERSION = 7
 READY_TIMEOUT = 12.0
 _children = []
 
@@ -77,7 +77,7 @@ def local_url(value: str) -> bool:
 def health(root: Path, state: dict | None, timeout: float = 0.5) -> dict | None:
     if not state or not local_url(state.get('base_url')):
         return None
-    if state.get('service') != SERVICE or state.get('version') != VERSION:
+    if state.get('service') != SERVICE or state.get('version') not in range(1, VERSION + 1):
         return None
     if state.get('project_root') != str(root.resolve()):
         return None
@@ -197,21 +197,28 @@ def process_exit_waiter(pid: int):
         yield wait
 
 
-def ensure_dashboard(root: Path, task: str, *, open_browser: bool = True,
+def ensure_dashboard(root: Path, task: str | None = None, *, open_browser: bool = True,
                      timeout: float = READY_TIMEOUT) -> dict:
     """Validate the task, reuse/start our server, then optionally open its task page."""
     root = Path(root).resolve()
     if timeout <= 0:
         raise ValueError('Dashboard timeout must be positive')
-    folder = TaskMetrics(root).task_dir(task)
-    if not (folder / 'events.jsonl').is_file():
-        raise ValueError('Register the task before starting its dashboard')
-    if folder.resolve().parent != (root / '.metrics').resolve():
-        raise ValueError('Task directory is outside the project journal folder')
+    if task is not None:
+        folder = TaskMetrics(root).task_dir(task)
+        if not (folder / 'events.jsonl').is_file():
+            raise ValueError('Register the task before starting its dashboard')
+        if folder.resolve().parent != (root / '.metrics').resolve():
+            raise ValueError('Task directory is outside the project journal folder')
     started = False
     with launch_lock(root, timeout):
         state = read_state(root)
-        if health(root, state) is None:
+        running = health(root, state)
+        if running is not None and running['version'] < VERSION:
+            # Маршруты и клиент обновляются вместе. Остановить можно только
+            # проверенный процесс этого проекта с его управляющим токеном.
+            _stop_verified_server(root, state, timeout)
+            running = None
+        if running is None:
             instance = uuid.uuid4().hex
             process = start_process(root, instance)
             deadline = time.monotonic() + timeout
@@ -239,7 +246,8 @@ def ensure_dashboard(root: Path, task: str, *, open_browser: bool = True,
                     _children.remove(process)
                 raise
             started = True
-        url = task_url(root, task, state['base_url'])
+        url = (task_url(root, task, state['base_url']) if task is not None else
+               state['base_url'] + '/?' + urlencode({'project': project_id(root)}))
         result = {'status': 'ready', 'url': url, 'started': started, 'opened': False,
                   'pid': state['pid'], 'instance_id': state['instance_id']}
         if open_browser:
@@ -250,6 +258,28 @@ def ensure_dashboard(root: Path, task: str, *, open_browser: bool = True,
         return result
 
 
+def _stop_verified_server(root, state, timeout):
+    """Вызывается под блокировкой запуска после сверки идентификатора, PID и корня."""
+    token = state.get('control_token')
+    if not isinstance(token, str) or not token:
+        raise ValueError('Dashboard control token is missing')
+    with process_exit_waiter(state['pid']) as wait_for_exit:
+        request = urllib.request.Request(state['base_url'].rstrip('/') + '/api/stop', data=b'',
+                                         headers={'X-Dashboard-Token': token}, method='POST')
+        with local_request(request, 2) as response:
+            response.read()
+        deadline = time.monotonic() + timeout
+        while health(root, state) is not None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Dashboard did not stop')
+            time.sleep(0.05)
+        for process in list(_children):
+            if process.pid == state['pid']:
+                process.wait(timeout=5)
+                _children.remove(process)
+        wait_for_exit(max(0.01, deadline - time.monotonic()))
+
+
 def stop_dashboard(root: Path, timeout: float = READY_TIMEOUT) -> bool:
     """Stop only a server whose identity matches this project's runtime record."""
     root = Path(root).resolve()
@@ -257,24 +287,7 @@ def stop_dashboard(root: Path, timeout: float = READY_TIMEOUT) -> bool:
         state = read_state(root)
         if health(root, state) is None:
             return False
-        token = state.get('control_token')
-        if not isinstance(token, str) or not token:
-            raise ValueError('Dashboard control token is missing')
-        with process_exit_waiter(state['pid']) as wait_for_exit:
-            request = urllib.request.Request(state['base_url'].rstrip('/') + '/api/stop', data=b'',
-                                             headers={'X-Dashboard-Token': token}, method='POST')
-            with local_request(request, 2) as response:
-                response.read()
-            deadline = time.monotonic() + timeout
-            while health(root, state) is not None:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError('Dashboard did not stop')
-                time.sleep(0.05)
-            for process in list(_children):
-                if process.pid == state['pid']:
-                    process.wait(timeout=5)
-                    _children.remove(process)
-            wait_for_exit(max(0.01, deadline - time.monotonic()))
+        _stop_verified_server(root, state, timeout)
         return True
 
 
@@ -285,8 +298,6 @@ def main(argv=None) -> int:
     parser.add_argument('--no-browser', action='store_true')
     parser.add_argument('--stop', action='store_true', help='stop this project dashboard')
     args = parser.parse_args(argv)
-    if not args.stop and not args.task:
-        parser.error('--task is required unless --stop is used')
     try:
         result = ({'stopped': stop_dashboard(args.root)} if args.stop else
                   ensure_dashboard(args.root, args.task, open_browser=not args.no_browser))

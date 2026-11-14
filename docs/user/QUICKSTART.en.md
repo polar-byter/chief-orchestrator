@@ -128,7 +128,9 @@ Here is how it looks in the wizard itself:
 5. **Step 3** — "Create project and configure models". The wizard copies the kit and
    opens the model settings. A starting choice is already there: the Master Chief and
    Bug Fixer use DeepSeek V4.1 Flash Free, executors use MiMo V2.6 Flash Free, one at
-   a time. Click "Save settings", then "Prepare OpenCode", and wait for success.
+   a time. Fresh installations start with Chief off. From the installed project,
+   run `.\kit\python.cmd -m kit.chief_mode on` (Linux: `sh kit/python.sh -m kit.chief_mode on`).
+   Then click "Save settings" and "Prepare OpenCode". To use your normal agent profile, leave Chief off.
 6. **Step 4** — the wizard launches Desktop with a request to open the project folder.
    Check the project name in Desktop: if a different one opened, click "Copy folder
    path" in the wizard, choose **Open Project** in Desktop and paste the path.

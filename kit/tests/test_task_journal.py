@@ -1,11 +1,47 @@
 """TaskJournal.append: what the journal writes and what it refuses."""
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from journal import TaskJournal  # noqa: E402
+
+
+class JournalPathTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'win32', 'Расширенный путь Windows')
+    def test_extended_spelling_during_concurrent_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = TaskJournal(Path(directory))
+            base = journal.root / '.metrics'
+            base.mkdir()
+            expected = base / 'second'
+            resolve = Path.resolve
+
+            def concurrent_resolve(path, *args, **kwargs):
+                if path == expected:
+                    return Path('\\\\?\\' + str(path))
+                return resolve(path, *args, **kwargs)
+
+            with patch.object(Path, 'resolve', concurrent_resolve):
+                self.assertEqual(journal.task_dir('second'), expected)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Junction Windows')
+    def test_junction_is_refused_at_either_metrics_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'target'
+            target.mkdir()
+            for relative in (Path('.metrics'), Path('.metrics/task')):
+                project = root / relative.name
+                link = project / relative
+                link.parent.mkdir(parents=True)
+                subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(target)],
+                               capture_output=True, check=True)
+                with self.subTest(path=relative), self.assertRaises(ValueError):
+                    TaskJournal(project).task_dir('task')
 
 
 class AppendTests(unittest.TestCase):

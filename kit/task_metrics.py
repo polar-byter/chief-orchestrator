@@ -53,6 +53,7 @@ import uuid
 #   usage_report.py  token usage from OpenCode exports and report.md (UsageReportMixin)
 # Names that used to live here are imported back, so "from task_metrics import X" keeps working.
 if __package__:
+    from .runtime_selection import check_task_runtime, uses_pi_runtime
     from .delegation_guard import (compare_project_snapshots, normalize_delegated_path, read_requirements,
                                    review_checks, take_project_snapshot)
     from .journal import (KNOWN_EVENT_TYPES, WINDOWS_RESERVED, TaskJournal, corrected_events, normalize_work_item,
@@ -68,6 +69,8 @@ if __package__:
                                master_chief_tool_child_references, message_info, message_model,
                                message_tokens, new_usage_row, resolve_opencode, text_or_unknown)
 else:
+    from runtime_selection import check_task_runtime, uses_pi_runtime
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from delegation_guard import (compare_project_snapshots, normalize_delegated_path, read_requirements,
                                   review_checks, take_project_snapshot)
     from journal import (KNOWN_EVENT_TYPES, WINDOWS_RESERVED, TaskJournal, corrected_events, normalize_work_item,
@@ -169,11 +172,14 @@ class TaskMetrics(TaskJournal, SuiteRunnerMixin, UsageReportMixin):
         limits = dict(DEFAULT_LIMITS, **{k: v for k, v in (limits or {}).items() if v is not None})
         if set(limits) != set(DEFAULT_LIMITS) or any(type(v) is not int or v < 1 for v in limits.values()):
             raise ValueError('Limits must be positive integers: ' + ', '.join(DEFAULT_LIMITS))
+        pi_runtime = uses_pi_runtime(self.root)
         self.task_dir(task).mkdir(parents=True, exist_ok=False)
         with self.lock(task):
             # session=session puts the value into append's **data as the "session" key;
             # session_id(session) above has already validated it.
             server = {}
+            if pi_runtime:
+                server.update(runtime='pi', server_mode='managed')
             if os.environ.get('OPENCODE_KIT_ROOT') and Path(os.environ['OPENCODE_KIT_ROOT']).resolve() == self.root:
                 server['server_mode'] = os.environ.get('OPENCODE_KIT_SERVER_MODE', 'unknown')
             return self.append(task, 'start', session=session, title=title or task, limits=limits,
@@ -196,6 +202,7 @@ class TaskMetrics(TaskJournal, SuiteRunnerMixin, UsageReportMixin):
         resume() uses read_events_if_not_finished instead: it must work while a STOP is active.
         """
         events = self.read_events_if_not_finished(task)
+        check_task_runtime(self.root, events[0])
         reason = blocking_reason(self.root, task)
         if reason:
             raise TaskHalted(reason)
@@ -627,6 +634,8 @@ class TaskMetrics(TaskJournal, SuiteRunnerMixin, UsageReportMixin):
                 raise TaskHalted(reason)
             events = self.read(task)
             finished = next((e for e in events if e['kind'] == 'finish'), None)
+            if not finished and not events[0].get('native_agent'):
+                check_task_runtime(self.root, events[0])
             isolated = [e for e in events if e['kind'] == 'delegation' and e.get('workspace')]
             if isolated and not finished:
                 if pending_attempts(events):
@@ -652,15 +661,22 @@ class TaskMetrics(TaskJournal, SuiteRunnerMixin, UsageReportMixin):
             else:
                 ended = time.time()
                 usage = dict(models=[], warnings=[], sessions=[])
-                try:
-                    session = events[0]['session']
-                    if not session:
-                        raise ValueError('Нет ID сессии OpenCode: токены — нет данных.')
-                    exports = ([json.loads((self.root / p).read_text(encoding='utf-8-sig')) for p in export_paths]
-                               if export_paths else self.collect_exports(session, executable))
-                    usage = self.parse_exports(exports, session, events[0]['at'], ended)
-                except (OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired) as error:
-                    usage['warnings'].append(f'Токены — нет данных: {error}')
+                if events[0].get('native_agent') in ('codex', 'claude'):
+                    from kit.native_team_state import NativeTeamState
+                    from kit.native_review_report import report_snapshot
+                    snapshot = report_snapshot(NativeTeamState(self.root, task).final_review_view())
+                    if snapshot:
+                        usage['native_reviews'] = snapshot
+                else:
+                    try:
+                        session = events[0]['session']
+                        if not session:
+                            raise ValueError('Нет ID сессии OpenCode: токены — нет данных.')
+                        exports = ([json.loads((self.root / p).read_text(encoding='utf-8-sig')) for p in export_paths]
+                                   if export_paths else self.collect_exports(session, executable))
+                        usage = self.parse_exports(exports, session, events[0]['at'], ended)
+                    except (OSError, ValueError, TypeError, AttributeError, RuntimeError, subprocess.TimeoutExpired) as error:
+                        usage['warnings'].append(f'Токены — нет данных: {error}')
                 # Journal first: report-write failure can be retried without recounting.
                 self.append(task, 'finish', ended=ended, usage=usage)
                 report = self.render(task, events, usage, ended, language)
@@ -696,7 +712,8 @@ def main(argv=None) -> int:
             limits = {name: getattr(args, name) for name in DEFAULT_LIMITS}
             event = metrics.start(args.task, args.session, args.title, limits, args.track_delegations)
             if (not args.no_dashboard and os.environ.get('OPENCODE_KIT_DASHBOARD', '').lower() not in ('off', '0')
-                    and (metrics.root / 'opencode.jsonc').is_file() and (metrics.root / 'kit').is_dir()):
+                    and any((metrics.root / name).is_file() for name in ('opencode.jsonc', 'pi-kit.json'))
+                    and (metrics.root / 'kit').is_dir()):
                 try:
                     dashboard = launch_task_dashboard(metrics.root, args.task, not args.no_browser)
                     if not args.no_browser and not dashboard['opened']:

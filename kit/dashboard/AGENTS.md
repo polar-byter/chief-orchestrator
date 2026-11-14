@@ -12,6 +12,20 @@ Start with README.ru.md.
 - `console.py`, `simple.py` and `static/simple.html` are small hand-written examples
   from learning Python. Keep them working and keep the user's own comments in them.
 - The page stays plain HTML/JavaScript without frameworks.
-- Source comments and docstrings are English; human-facing docs may be Russian.
+- Use meaningful English identifiers. Write new or revised kit comments and
+  docstrings in natural Russian, explaining state transitions or constraints
+  where the reason is easy to miss. Preserve the author's learning notes.
 - Run the dashboard tests from the project root:
   `py -m unittest discover -s kit/dashboard/tests -t .`
+
+Use `/stage` for stage work. Route stage reads through `stage_monitor`;
+discussion and trace writes belong to `stage_collaboration`, estimate decisions
+to `stage_decisions`. Keep the task journal read-only in these views. Preserve
+the selected stage, feature and document revision between team tabs.
+Stage resource arithmetic belongs to `stage_resources`, dated inputs and
+immutable snapshots to `stage_resource_ledger`. A running dashboard observes
+changed estimates for stages with an existing resource journal. GET requests
+only read. Keep partial totals, registered zero and missing data distinct.
+Read aggregated risks from the stage estimate. Keep the original source with
+each risk discussion. The browser edits the named working document using its
+hash and record revision. Reuse the operation UUID after an uncertain response.

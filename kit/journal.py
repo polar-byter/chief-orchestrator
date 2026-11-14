@@ -130,16 +130,16 @@ class TaskJournal:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
 
-    # get the directory for a specific task, validating the task name and ensuring no symlinks
     def task_dir(self, task: str) -> Path:
+        """Возвращает путь внутри проекта и отвергает перенаправленные каталоги."""
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}', task) or task.upper() in WINDOWS_RESERVED:
             raise ValueError('Task ID: 1-80 ASCII letters/digits/_/-, not a reserved Windows name')
 
         base = self.root / '.metrics'
         result = base / task
-        # this condition uses resolve() to prevent symlinks or junctions in the path
-        # junction means a Windows NTFS directory link, which is not a symlink but behaves like one.
-        if base.resolve() != base or result.resolve() != result:
+        # При одновременном создании .metrics Windows может вернуть тот же путь
+        # с другим префиксом. Проверяем сами каталоги ниже разрешённого корня.
+        if any(path.is_symlink() or path.is_junction() for path in (base, result)):
             raise ValueError('Metrics directories must not be symlinks or junctions')
         return result
 
