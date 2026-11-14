@@ -67,10 +67,11 @@ class InstalledLinuxDesktop(unittest.TestCase):
             window.update()
             self.assertTrue(window.winfo_viewable())
             self.assertGreater(window.winfo_width(), 700)
+            self.assertEqual(window.title(), 'Project setup — Chief')
             wizard.language = 'ru'
             wizard.localize()
             window.update()
-            self.assertIn('OpenCode', window.title())
+            self.assertEqual(window.title(), 'Мастер установки Чифа')
         finally:
             wizard.close()
 
